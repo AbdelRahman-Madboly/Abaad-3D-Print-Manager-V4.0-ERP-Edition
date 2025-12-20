@@ -1,0 +1,12 @@
+# Abaad 3D Print Manager v4.0 (ERP Edition)
+# Core app uses Python standard library - no dependencies needed!
+
+# For PDF Receipt Generation (recommended):
+reportlab>=4.0.0
+
+# For Cura Vision AI (OCR from screenshots):
+Pillow>=10.0.0
+pytesseract>=0.3.10
+
+# Note: pytesseract requires Tesseract OCR to be installed separately
+# Download from: https://github.com/UB-Mannheim/tesseract/wiki
