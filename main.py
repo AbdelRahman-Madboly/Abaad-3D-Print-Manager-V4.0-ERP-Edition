@@ -1,6 +1,7 @@
 """
 Abaad 3D Print Manager v4.0 (ERP Edition)
 Main Application Entry Point with RBAC
+Professional GUI with Modern Design
 """
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
@@ -43,9 +44,19 @@ class App:
         self.root = root
         self.user = user
         self.auth = get_auth_manager()
-        self.root.title(f"Abaad 3D Print Manager v4.0 (ERP Edition) - {user.display_name or user.username}")
-        self.root.geometry("1500x950")
+        self.root.title(f"Abaad ERP v4.0 - {user.display_name or user.username}")
+        self.root.geometry("1400x900")
+        self.root.minsize(1200, 700)
         self.root.configure(bg=Colors.BG)
+        
+        # Try to set window icon
+        try:
+            icon_path = Path(__file__).parent / "assets" / "Abaad.png"
+            if icon_path.exists():
+                img = tk.PhotoImage(file=str(icon_path))
+                self.root.iconphoto(True, img)
+        except:
+            pass
         
         self.db = get_database()
         self.current_order = None
@@ -54,56 +65,110 @@ class App:
         self._setup_styles()
         self._build_ui()
         self._load_all_data()
+        self._update_status_bar()
     
     def _setup_styles(self):
         style = ttk.Style()
         style.theme_use('clam')
+        
+        # General styles
         style.configure("TFrame", background=Colors.BG)
-        style.configure("TLabel", background=Colors.BG)
-        style.configure("TNotebook.Tab", padding=[15, 8], font=("Segoe UI", 10))
-        style.configure("Title.TLabel", font=("Segoe UI", 14, "bold"))
-        style.configure("Admin.TNotebook.Tab", background=Colors.PURPLE)
+        style.configure("TLabel", background=Colors.BG, font=("Segoe UI", 10))
+        style.configure("TButton", font=("Segoe UI", 10), padding=6)
+        
+        # Notebook tabs
+        style.configure("TNotebook", background=Colors.BG)
+        style.configure("TNotebook.Tab", padding=[20, 10], font=("Segoe UI", 11))
+        style.map("TNotebook.Tab", 
+                  background=[("selected", Colors.PRIMARY), ("!selected", Colors.CARD)],
+                  foreground=[("selected", "white"), ("!selected", Colors.TEXT)])
+        
+        # Custom label styles
+        style.configure("Title.TLabel", font=("Segoe UI", 16, "bold"), foreground=Colors.TEXT)
+        style.configure("Subtitle.TLabel", font=("Segoe UI", 12), foreground=Colors.TEXT_SECONDARY)
+        style.configure("Header.TLabel", font=("Segoe UI", 13, "bold"), foreground=Colors.PRIMARY)
+        
+        # LabelFrame
+        style.configure("TLabelframe", background=Colors.BG, borderwidth=1)
+        style.configure("TLabelframe.Label", font=("Segoe UI", 10, "bold"), 
+                       foreground=Colors.PRIMARY, background=Colors.BG)
+        
+        # Entry & Combobox
+        style.configure("TEntry", padding=5)
+        style.configure("TCombobox", padding=5)
+        
+        # Treeview
+        style.configure("Treeview", font=("Segoe UI", 10), rowheight=28)
+        style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"), 
+                       background=Colors.PRIMARY, foreground="white")
+        style.map("Treeview", background=[("selected", Colors.PRIMARY_LIGHT)])
+        
+        # Accent button
+        style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"))
     
     def _build_ui(self):
-        # Header
-        header = tk.Frame(self.root, bg=Colors.PRIMARY, height=60)
+        """Build the main UI with header, content, and status bar"""
+        
+        # === HEADER BAR ===
+        header = tk.Frame(self.root, bg=Colors.PRIMARY, height=70)
         header.pack(fill=tk.X)
         header.pack_propagate(False)
         
-        tk.Label(header, text="🖨️ Abaad 3D Print Manager v4.0", font=("Segoe UI", 18, "bold"),
-                fg="white", bg=Colors.PRIMARY).pack(side=tk.LEFT, padx=15, pady=12)
+        # Left side - Logo & Title
+        left_header = tk.Frame(header, bg=Colors.PRIMARY)
+        left_header.pack(side=tk.LEFT, padx=20, pady=10)
         
-        # User info and logout button
-        user_frame = tk.Frame(header, bg=Colors.PRIMARY)
-        user_frame.pack(side=tk.RIGHT, padx=15)
+        tk.Label(left_header, text="🖨️", font=("Segoe UI", 28), 
+                bg=Colors.PRIMARY, fg="white").pack(side=tk.LEFT)
         
-        role_color = "#22c55e" if self.user.role == UserRole.ADMIN.value else "#f59e0b"
-        role_text = "👑 Admin" if self.user.role == UserRole.ADMIN.value else "👤 User"
+        title_frame = tk.Frame(left_header, bg=Colors.PRIMARY)
+        title_frame.pack(side=tk.LEFT, padx=10)
         
-        tk.Label(user_frame, text=f"{self.user.display_name or self.user.username}", 
-                font=("Segoe UI", 10, "bold"), fg="white", bg=Colors.PRIMARY).pack(side=tk.LEFT, padx=5)
-        tk.Label(user_frame, text=role_text, font=("Segoe UI", 9), 
-                fg=role_color, bg=Colors.PRIMARY).pack(side=tk.LEFT, padx=5)
+        tk.Label(title_frame, text="Abaad ERP", font=("Segoe UI", 18, "bold"),
+                fg="white", bg=Colors.PRIMARY).pack(anchor=tk.W)
+        tk.Label(title_frame, text="3D Print Management System", font=("Segoe UI", 9),
+                fg="#94a3b8", bg=Colors.PRIMARY).pack(anchor=tk.W)
         
-        tk.Button(user_frame, text="🔐", font=("Segoe UI", 9), 
-                 command=self._change_password, relief=tk.FLAT,
-                 bg=Colors.PRIMARY, fg="white", cursor="hand2").pack(side=tk.LEFT, padx=3)
-        tk.Button(user_frame, text="🚪 Logout", font=("Segoe UI", 9), 
-                 command=self._logout, relief=tk.FLAT,
-                 bg="#ef4444", fg="white", cursor="hand2").pack(side=tk.LEFT, padx=3)
+        # Right side - User info
+        right_header = tk.Frame(header, bg=Colors.PRIMARY)
+        right_header.pack(side=tk.RIGHT, padx=20)
         
-        # Status indicators
-        status_frame = tk.Frame(header, bg=Colors.PRIMARY)
-        status_frame.pack(side=tk.RIGHT, padx=15)
-        if CURA_VISION_AVAILABLE:
-            tk.Label(status_frame, text="🤖 AI", fg="#22c55e", bg=Colors.PRIMARY, 
-                    font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=3)
+        # Feature badges
+        badge_frame = tk.Frame(right_header, bg=Colors.PRIMARY)
+        badge_frame.pack(side=tk.LEFT, padx=20)
+        
         if REPORTLAB_AVAILABLE:
-            tk.Label(status_frame, text="📄 PDF", fg="#22c55e", bg=Colors.PRIMARY,
-                    font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=3)
+            self._create_badge(badge_frame, "📄 PDF", Colors.SUCCESS)
+        if CURA_VISION_AVAILABLE:
+            self._create_badge(badge_frame, "🤖 AI", Colors.SUCCESS)
         
+        # User info
+        user_frame = tk.Frame(right_header, bg=Colors.PRIMARY)
+        user_frame.pack(side=tk.LEFT, padx=10)
+        
+        role_icon = "👑" if self.user.role == UserRole.ADMIN.value else "👤"
+        role_name = "Admin" if self.user.role == UserRole.ADMIN.value else "User"
+        role_color = Colors.WARNING if self.user.role == UserRole.ADMIN.value else Colors.INFO
+        
+        tk.Label(user_frame, text=f"{role_icon} {self.user.display_name or self.user.username}", 
+                font=("Segoe UI", 11, "bold"), fg="white", bg=Colors.PRIMARY).pack(side=tk.LEFT, padx=5)
+        
+        # Role badge
+        role_badge = tk.Frame(user_frame, bg=role_color, padx=8, pady=2)
+        role_badge.pack(side=tk.LEFT, padx=5)
+        tk.Label(role_badge, text=role_name, font=("Segoe UI", 9, "bold"), 
+                fg="white", bg=role_color).pack()
+        
+        # Switch user button
+        switch_btn = tk.Button(user_frame, text="🔄 Switch", font=("Segoe UI", 9),
+                              command=self._logout, relief=tk.FLAT, bd=0,
+                              bg="#ef4444", fg="white", cursor="hand2",
+                              padx=10, pady=4)
+        switch_btn.pack(side=tk.LEFT, padx=(15, 0))
+        
+        # === MAIN CONTENT ===
         self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=15, pady=(10, 0))
         
         # Build tabs based on user permissions
         self._build_orders_tab()
@@ -120,6 +185,35 @@ class App:
         
         if self.auth.has_permission(Permission.MANAGE_USERS):
             self._build_admin_tab()
+        
+        # === STATUS BAR ===
+        self.status_bar = tk.Frame(self.root, bg=Colors.BG_DARK, height=35)
+        self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+        self.status_bar.pack_propagate(False)
+        
+        self.status_left = tk.Label(self.status_bar, text="Ready", font=("Segoe UI", 9),
+                                   bg=Colors.BG_DARK, fg=Colors.TEXT_LIGHT)
+        self.status_left.pack(side=tk.LEFT, padx=15)
+        
+        self.status_right = tk.Label(self.status_bar, text="", font=("Segoe UI", 9),
+                                    bg=Colors.BG_DARK, fg=Colors.TEXT_LIGHT)
+        self.status_right.pack(side=tk.RIGHT, padx=15)
+    
+    def _create_badge(self, parent, text, color):
+        """Create a small status badge"""
+        badge = tk.Frame(parent, bg=color, padx=6, pady=2)
+        badge.pack(side=tk.LEFT, padx=3)
+        tk.Label(badge, text=text, font=("Segoe UI", 8, "bold"),
+                bg=color, fg="white").pack()
+    
+    def _update_status_bar(self):
+        """Update status bar with current info"""
+        stats = self.db.get_statistics()
+        orders = len(self.db.get_all_orders())
+        spools = len([s for s in self.db.get_all_spools() if s.is_active])
+        
+        self.status_left.config(text=f"📦 {orders} Orders  |  🎨 {spools} Active Spools  |  💰 {stats.total_revenue:.0f} EGP Revenue")
+        self.status_right.config(text=f"v4.0 ERP  |  {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     
     def _build_admin_tab(self):
         """Admin Panel tab - Admin only"""
@@ -131,50 +225,81 @@ class App:
         ChangePasswordDialog(self.root)
     
     def _logout(self):
-        """Logout current user and show login"""
-        if messagebox.askyesno("Logout", "Are you sure you want to logout?"):
+        """Switch user - go back to role selection"""
+        if messagebox.askyesno("Switch User", "Switch to a different user role?"):
             self.auth.logout()
             self.root.destroy()
             main()  # Restart with login
     
+    def _set_status(self, message):
+        """Update status bar message"""
+        self.status_left.config(text=message)
+        self.root.update_idletasks()
+    
     def _build_orders_tab(self):
-        tab = ttk.Frame(self.notebook, padding=10)
+        tab = ttk.Frame(self.notebook, padding=15)
         self.notebook.add(tab, text="📦 Orders")
         
+        # Left panel - Order list
         left = ttk.Frame(tab)
-        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 15))
         
-        ttk.Label(left, text="All Orders", style="Title.TLabel").pack(anchor=tk.W)
+        # Header with title and new button
+        header = ttk.Frame(left)
+        header.pack(fill=tk.X, pady=(0, 10))
         
+        ttk.Label(header, text="📦 Order Management", style="Title.TLabel").pack(side=tk.LEFT)
+        
+        new_btn = tk.Button(header, text="➕ New Order", font=("Segoe UI", 10, "bold"),
+                           bg=Colors.SUCCESS, fg="white", relief=tk.FLAT, padx=15, pady=5,
+                           cursor="hand2", command=self._new_order)
+        new_btn.pack(side=tk.RIGHT)
+        
+        # Search and filter row
         search_f = ttk.Frame(left)
-        search_f.pack(fill=tk.X, pady=5)
-        self.order_search = ttk.Entry(search_f, width=25)
+        search_f.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(search_f, text="🔍").pack(side=tk.LEFT, padx=(0, 5))
+        self.order_search = ttk.Entry(search_f, width=25, font=("Segoe UI", 10))
         self.order_search.pack(side=tk.LEFT, padx=5)
+        self.order_search.insert(0, "Search orders...")
+        self.order_search.bind('<FocusIn>', lambda e: self.order_search.delete(0, tk.END) if self.order_search.get() == "Search orders..." else None)
+        self.order_search.bind('<FocusOut>', lambda e: self.order_search.insert(0, "Search orders...") if not self.order_search.get() else None)
         self.order_search.bind('<KeyRelease>', lambda e: self._filter_orders())
         
+        ttk.Label(search_f, text="Status:").pack(side=tk.LEFT, padx=(15, 5))
         self.status_filter = ttk.Combobox(search_f, values=["All"] + [s.value for s in OrderStatus], 
                                           state="readonly", width=12)
         self.status_filter.set("All")
         self.status_filter.pack(side=tk.LEFT, padx=5)
         self.status_filter.bind('<<ComboboxSelected>>', lambda e: self._filter_orders())
-        ttk.Button(search_f, text="+ New Order", command=self._new_order).pack(side=tk.RIGHT)
+        
+        # Orders list with scrollbar
+        list_frame = ttk.Frame(left)
+        list_frame.pack(fill=tk.BOTH, expand=True)
         
         cols = ("Order#", "Customer", "Items", "Total", "Status", "Date", "R&D")
-        self.orders_tree = ttk.Treeview(left, columns=cols, show="headings", height=25)
-        for col, w in zip(cols, [60, 130, 45, 75, 85, 85, 40]):
+        self.orders_tree = ttk.Treeview(list_frame, columns=cols, show="headings", height=22)
+        for col, w in zip(cols, [70, 140, 50, 80, 90, 90, 45]):
             self.orders_tree.heading(col, text=col)
-            self.orders_tree.column(col, width=w)
-        scroll = ttk.Scrollbar(left, command=self.orders_tree.yview)
+            self.orders_tree.column(col, width=w, anchor=tk.CENTER if col not in ["Customer"] else tk.W)
+        
+        scroll = ttk.Scrollbar(list_frame, command=self.orders_tree.yview)
         self.orders_tree.configure(yscrollcommand=scroll.set)
         self.orders_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.orders_tree.bind('<<TreeviewSelect>>', self._on_order_select)
         
+        # Right panel - Order details
         right = ttk.Frame(tab)
         right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
-        self.order_title = ttk.Label(right, text="New Order", style="Title.TLabel")
-        self.order_title.pack(anchor=tk.W)
+        # Order title with icon
+        title_frame = ttk.Frame(right)
+        title_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        self.order_title = ttk.Label(title_frame, text="📝 New Order", style="Title.TLabel")
+        self.order_title.pack(side=tk.LEFT)
         
         cust_f = ttk.LabelFrame(right, text="Customer", padding=8)
         cust_f.pack(fill=tk.X, pady=5)
@@ -279,21 +404,45 @@ class App:
         self.rd_cost_lbl = ttk.Label(row_t3, text="", foreground=Colors.PURPLE)
         self.rd_cost_lbl.pack(side=tk.LEFT, padx=10)
         
+        # Action buttons with better styling
         actions = ttk.Frame(right)
-        actions.pack(fill=tk.X, pady=5)
-        ttk.Button(actions, text="💾 Save", command=self._save_order).pack(side=tk.LEFT, padx=2)
-        ttk.Button(actions, text="📄 Quote", command=self._gen_quote_pdf).pack(side=tk.LEFT, padx=2)
-        ttk.Button(actions, text="🧾 Receipt", command=self._gen_receipt_pdf).pack(side=tk.LEFT, padx=2)
-        ttk.Button(actions, text="📋 Text", command=self._gen_receipt).pack(side=tk.LEFT, padx=2)
+        actions.pack(fill=tk.X, pady=10)
         
-        # Only show delete for users with permission
+        # Primary action - Save
+        save_btn = tk.Button(actions, text="💾 Save Order", font=("Segoe UI", 10, "bold"),
+                            bg=Colors.PRIMARY, fg="white", relief=tk.FLAT, padx=15, pady=6,
+                            cursor="hand2", command=self._save_order)
+        save_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Document generation buttons
+        doc_frame = ttk.Frame(actions)
+        doc_frame.pack(side=tk.LEFT, padx=10)
+        
+        tk.Button(doc_frame, text="📄 Quote", font=("Segoe UI", 9),
+                 bg=Colors.INFO, fg="white", relief=tk.FLAT, padx=10, pady=4,
+                 cursor="hand2", command=self._gen_quote_pdf).pack(side=tk.LEFT, padx=2)
+        tk.Button(doc_frame, text="🧾 Receipt", font=("Segoe UI", 9),
+                 bg=Colors.INFO, fg="white", relief=tk.FLAT, padx=10, pady=4,
+                 cursor="hand2", command=self._gen_receipt_pdf).pack(side=tk.LEFT, padx=2)
+        tk.Button(doc_frame, text="📋 Text", font=("Segoe UI", 9),
+                 bg=Colors.TEXT_SECONDARY, fg="white", relief=tk.FLAT, padx=10, pady=4,
+                 cursor="hand2", command=self._gen_receipt).pack(side=tk.LEFT, padx=2)
+        
+        # Secondary actions
         if self.auth.has_permission(Permission.DELETE_ORDER):
-            ttk.Button(actions, text="🗑️", command=self._delete_order).pack(side=tk.LEFT, padx=2)
+            tk.Button(actions, text="🗑️ Delete", font=("Segoe UI", 9),
+                     bg=Colors.DANGER, fg="white", relief=tk.FLAT, padx=10, pady=4,
+                     cursor="hand2", command=self._delete_order).pack(side=tk.RIGHT, padx=2)
         
-        ttk.Button(actions, text="✨ New", command=self._new_order).pack(side=tk.LEFT, padx=2)
+        tk.Button(actions, text="✨ New", font=("Segoe UI", 9),
+                 bg=Colors.SUCCESS, fg="white", relief=tk.FLAT, padx=10, pady=4,
+                 cursor="hand2", command=self._new_order).pack(side=tk.RIGHT, padx=2)
         
-        ttk.Label(right, text="Notes:").pack(anchor=tk.W, pady=(5, 0))
-        self.order_notes = tk.Text(right, height=2, font=("Segoe UI", 9))
+        # Notes section
+        notes_frame = ttk.LabelFrame(right, text="📝 Order Notes", padding=5)
+        notes_frame.pack(fill=tk.X, pady=(5, 0))
+        self.order_notes = tk.Text(notes_frame, height=2, font=("Segoe UI", 10), 
+                                  relief=tk.FLAT, bg=Colors.CARD)
         self.order_notes.pack(fill=tk.X)
 
     def _build_customers_tab(self):

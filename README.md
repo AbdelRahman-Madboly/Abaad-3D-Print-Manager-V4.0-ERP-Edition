@@ -1,135 +1,176 @@
-# Abaad 3D Print Manager v4.0 (ERP Edition)
+# 🖨️ Abaad 3D Print Manager v4.0 (ERP Edition)
 
-A complete Windows desktop application for managing 3D printing orders with advanced ERP features and AI integration.
+<div align="center">
 
-## 🌟 What's New in v4.0
+![Abaad Logo](assets/Abaad.png)
 
-### ✅ Pending Filament Deduction
-- Filament is **reserved (pending)** when added to an order
-- Only **permanently deducted** when order status changes to "Confirmed" or "In Progress"
-- If order is **cancelled or deleted**, filament is **returned** to the spool
+**Professional 3D Print Shop Management System**
 
-### ✅ Filament Trash/Archive System
-- Spools with < 20g remaining show "Move to Trash" button
-- Archived spools are tracked in FilamentHistory
-- Waste tracking for business statistics
+*Orders • Customers • Inventory • Statistics*
 
-### ✅ R&D Mode
-- Toggle "R&D Project" checkbox for internal projects
-- R&D Cost = Material + Electricity + Depreciation (actual cost)
-- Zero profit calculation for R&D orders
-- Purple badge on R&D orders
-
-### ✅ Financial Rounding/Slippage
-- Enter "Amount Received" when customer pays
-- System calculates "Rounding Loss" automatically
-- Example: Total 1007 EGP, Received 1000 EGP → Loss 7 EGP
-- Tracked in statistics for business analysis
-
-### ✅ Tolerance Discount
-- Set "Actual Weight" after printing to compare with estimate
-- If printed part is 1-5g heavier than estimated, automatic discount applies
-- Discount = 1g × rate per part
-- Shows in receipt and order totals
-
-### ✅ Cura Vision AI (OCR)
-- Click "Paste from Clipboard (Cura)" in Add Item dialog
-- Screenshot Cura slicer after slicing, copy to clipboard
-- AI extracts Time and Weight automatically
-- Requires: Pillow + Tesseract OCR
-
-### ✅ Two-Stage PDF Generation
-- **Quote PDF**: Shows estimated costs, 50% deposit required, disclaimer
-- **Invoice/Receipt PDF**: Shows final measured weights, tolerance discounts
-
-### ✅ Enhanced Statistics Dashboard
-- Revenue, Profit, Margin
-- Material Cost, Electricity, Depreciation
-- Rounding Loss tracking
-- Waste from trashed spools
-- Tolerance discounts total
-- R&D orders count
-
-## 📦 Installation
-
-### Option 1: Run Directly (Windows)
-1. Extract to: `D:\Abad\Print3D_Manager\abaad_v4\`
-2. Run: `python main.py`
-
-### Option 2: Create Virtual Environment
-```bash
-cd D:\Abad\Print3D_Manager\abaad_v4
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-python main.py
-```
-
-### Installing Tesseract OCR (for Cura Vision AI)
-1. Download from: https://github.com/UB-Mannheim/tesseract/wiki
-2. Install to default location: `C:\Program Files\Tesseract-OCR\`
-3. The app will auto-detect it
-
-## 💰 Pricing Logic
-
-### Pending Filament System
-```
-1. Item Added → Filament RESERVED (pending)
-2. Order Confirmed → Filament COMMITTED (deducted)
-3. Order Cancelled → Filament RETURNED
-```
-
-### R&D Mode Pricing
-```
-R&D Cost = Material Cost + Electricity Cost + Depreciation Cost
-Profit = 0 (always)
-```
-
-### Tolerance Discount
-```
-If Actual Weight > Estimated by 1-5g:
-    Discount = Rate × Quantity (1g cost per part)
-```
-
-### Rounding Loss
-```
-Rounding Loss = Total - Amount Received
-(Only if Amount Received < Total)
-```
-
-## 📂 File Structure
-```
-abaad_v4/
-├── main.py                 # Entry point
-├── requirements.txt        # Dependencies
-├── README.md              # This file
-├── assets/                # Logo and icons
-│   └── icon.ico
-├── data/                  # Database storage
-│   └── abaad_v4.db.json
-├── exports/               # Generated PDFs
-├── src/
-│   ├── __init__.py
-│   ├── models.py          # Data models
-│   ├── database.py        # JSON database manager
-│   ├── logic/
-│   │   ├── __init__.py
-│   │   └── cura_ai.py     # Cura Vision OCR
-│   └── utils/
-│       ├── __init__.py
-│       └── pdf_generator.py
-```
-
-## 🎨 Available Colors
-Black, Light Blue, Silver, White, Red, Beige, Purple
-
-## 🔄 Migration from v3
-The v4 database manager automatically migrates data from v3 if:
-- v3 database exists at `data/abaad_print_manager.db.json`
-- v4 database is empty
+</div>
 
 ---
 
+## ✨ Features
+
+| Feature | Description |
+|---------|-------------|
+| 📦 **Order Management** | Create, track, and manage print orders with detailed pricing |
+| 👥 **Customer Database** | Store customer info with discount history |
+| 🎨 **Filament Inventory** | Track spool usage, pending, and remaining weight |
+| 🖨️ **Printer Tracking** | Monitor print time, material used, nozzle wear |
+| 📊 **Business Statistics** | Revenue, profit, costs, margins dashboard |
+| 📄 **PDF Generation** | Professional quotes and receipts |
+| 🤖 **Cura Vision AI** | Extract print data from Cura screenshots (optional) |
+| 👑 **Role-Based Access** | Admin & Staff user roles |
+
+---
+
+## 🚀 Quick Start (Windows)
+
+### Step 1: Install Python
+
+1. Download Python from: https://www.python.org/downloads/
+2. **IMPORTANT**: Check ✅ "Add Python to PATH" during installation
+3. Click "Install Now"
+
+### Step 2: Setup the Project
+
+**Option A: Automatic Setup (Recommended)**
+```
+Double-click SETUP.bat
+```
+
+**Option B: Manual Setup**
+```cmd
+# Open Command Prompt in project folder
+cd D:\Abad\Print3D_Manager
+
+# Create virtual environment
+python -m venv venv
+
+# Activate it
+venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Step 3: Run the Application
+
+**Option A: Double-click**
+```
+Double-click Launch_App.bat
+```
+
+**Option B: Manual Run**
+```cmd
+# Open Command Prompt in project folder
+venv\Scripts\activate
+python main.py
+```
+
+---
+
+## 📁 Project Structure
+
+```
+Print3D_Manager/
+├── 📄 main.py              # Main application entry
+├── 📄 SETUP.bat            # One-click setup script
+├── 📄 Launch_App.bat       # Run the application
+├── 📄 requirements.txt     # Python dependencies
+│
+├── 📁 src/                 # Source code
+│   ├── models.py           # Data models
+│   ├── database.py         # Database operations
+│   ├── 📁 logic/           # Business logic
+│   │   ├── auth.py         # Authentication
+│   │   └── cura_ai.py      # Cura screenshot OCR
+│   ├── 📁 ui/              # User interface
+│   │   ├── login.py        # Quick start dialog
+│   │   └── admin_panel.py  # Admin panel
+│   └── 📁 utils/           # Utilities
+│       └── pdf_generator.py
+│
+├── 📁 data/                # Database files (JSON)
+│   └── abaad_v4.db.json
+│
+├── 📁 exports/             # Generated PDFs
+│
+└── 📁 assets/              # Images & resources
+```
+
+---
+
+## 🎯 How to Use
+
+### Quick Start
+1. **Double-click** `Launch_App.bat`
+2. **Select your role**: Administrator or Staff User
+3. Start managing your 3D print shop!
+
+### User Roles
+
+| Role | Access |
+|------|--------|
+| 👑 **Administrator** | Full access to all features including settings, statistics, and user management |
+| 👤 **Staff User** | Create orders, manage customers, view inventory |
+
+### Creating an Order
+1. Go to **📦 Orders** tab
+2. Click **+ New Order**
+3. Enter customer name/phone
+4. Click **+ Add** to add print items
+5. Fill in item details (name, weight, color)
+6. Click **💾 Save**
+7. Generate **📄 Quote** or **🧾 Receipt**
+
+---
+
+## ⚙️ Configuration
+
+### Company Settings (Admin Only)
+- Go to **⚙️ Settings** tab
+- Update company name, phone, default pricing
+- Click **💾 Save Settings**
+
+### Adding Filament Colors (Admin Only)
+- Go to **👑 Admin Panel** tab
+- Click **Filament Config** section
+- Add new colors, brands, or types
+
+---
+
+## 🛠️ Troubleshooting
+
+### "Python is not recognized"
+→ Reinstall Python with "Add to PATH" checked
+
+### "Module not found"
+→ Run `venv\Scripts\activate` then `pip install -r requirements.txt`
+
+### "Cannot open PDF"
+→ Install a PDF viewer (Adobe Reader, Chrome, etc.)
+
+### App crashes on start
+→ Delete `data/abaad_v4.db.json` to reset the database
+
+---
+
+## 📞 Support
+
 **Abaad 3D Printing Services**  
-Ismailia, Egypt  
-01070750477
+📍 Ismailia, Egypt  
+📱 01070750477
+
+---
+
+<div align="center">
+
+**Made with ❤️ for 3D Printing Community**
+
+*v4.0 ERP Edition*
+
+</div>
