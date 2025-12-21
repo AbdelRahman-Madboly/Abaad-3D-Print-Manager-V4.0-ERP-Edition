@@ -1,10 +1,9 @@
 """
 Quick Start Dialog for Abaad ERP v4.0
 Simple role selection - No password required
-Professional, user-friendly design
 """
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from pathlib import Path
 import sys
 
@@ -67,10 +66,6 @@ class Colors:
     CYAN = "#06b6d4"
     ORANGE = "#f97316"
     PINK = "#ec4899"
-    
-    # Gradient-like pairs
-    GRADIENT_START = "#4f46e5"
-    GRADIENT_END = "#06b6d4"
 
 
 class QuickStartDialog:
@@ -90,297 +85,171 @@ class QuickStartDialog:
     def _create_dialog(self):
         """Create the quick start dialog"""
         self.dialog = tk.Toplevel(self.parent)
-        self.dialog.title("Abaad ERP v4.0")
-        self.dialog.geometry("500x600")
+        self.dialog.title("Abaad ERP v4.0 - Select Role")
+        self.dialog.geometry("450x500")
         self.dialog.resizable(False, False)
-        self.dialog.configure(bg=Colors.BG)
+        self.dialog.configure(bg="#f0f4f8")
         
-        # Center the dialog
+        # Center the dialog on screen
+        self.dialog.update_idletasks()
+        width = 450
+        height = 500
+        x = (self.dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.dialog.winfo_screenheight() // 2) - (height // 2)
+        self.dialog.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # Make modal
         self.dialog.transient(self.parent)
         self.dialog.grab_set()
-        
-        self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() - 500) // 2
-        y = (self.dialog.winfo_screenheight() - 600) // 2
-        self.dialog.geometry(f"500x600+{x}+{y}")
         
         self.dialog.protocol("WM_DELETE_WINDOW", self._on_exit)
         
         self._build_ui()
-        self.dialog.wait_window()
+        
+        # Wait for dialog to close
+        self.parent.wait_window(self.dialog)
     
     def _build_ui(self):
-        """Build the modern UI"""
-        # Main container
-        main = tk.Frame(self.dialog, bg=Colors.BG)
-        main.pack(fill=tk.BOTH, expand=True, padx=40, pady=30)
+        """Build the UI"""
+        bg = "#f0f4f8"
         
-        # === HEADER ===
-        header = tk.Frame(main, bg=Colors.BG)
-        header.pack(fill=tk.X, pady=(0, 30))
-        
-        # Logo
-        logo_frame = tk.Frame(header, bg=Colors.PRIMARY, width=90, height=90)
-        logo_frame.pack()
-        logo_frame.pack_propagate(False)
+        # Header
+        header = tk.Frame(self.dialog, bg=Colors.PRIMARY, height=100)
+        header.pack(fill=tk.X)
+        header.pack_propagate(False)
         
         tk.Label(
-            logo_frame,
-            text="🖨️",
-            font=("Segoe UI", 40),
+            header,
+            text="🖨️ Abaad ERP v4.0",
+            font=("Arial", 22, "bold"),
             bg=Colors.PRIMARY,
             fg="white"
         ).pack(expand=True)
         
-        # Title
-        tk.Label(
-            header,
-            text="Abaad ERP",
-            font=("Segoe UI", 28, "bold"),
-            bg=Colors.BG,
-            fg=Colors.TEXT
-        ).pack(pady=(20, 5))
+        # Main content
+        main = tk.Frame(self.dialog, bg=bg)
+        main.pack(fill=tk.BOTH, expand=True, padx=30, pady=20)
         
-        tk.Label(
-            header,
-            text="3D Print Management System",
-            font=("Segoe UI", 12),
-            bg=Colors.BG,
-            fg=Colors.TEXT_SECONDARY
-        ).pack()
-        
-        # Version badge
-        version_frame = tk.Frame(header, bg=Colors.SUCCESS, padx=12, pady=4)
-        version_frame.pack(pady=(10, 0))
-        tk.Label(
-            version_frame,
-            text="v4.0 ERP Edition",
-            font=("Segoe UI", 9, "bold"),
-            bg=Colors.SUCCESS,
-            fg="white"
-        ).pack()
-        
-        # === SELECT ROLE ===
         tk.Label(
             main,
-            text="Select Your Role",
-            font=("Segoe UI", 14, "bold"),
-            bg=Colors.BG,
-            fg=Colors.TEXT
-        ).pack(pady=(20, 15))
+            text="Welcome! Select your role:",
+            font=("Arial", 14, "bold"),
+            bg=bg,
+            fg="#333"
+        ).pack(pady=(10, 20))
         
-        # Role cards container
-        cards = tk.Frame(main, bg=Colors.BG)
-        cards.pack(fill=tk.X, pady=10)
-        
-        # Admin Card
-        self._create_role_card(
-            cards,
-            role=UserRole.ADMIN,
-            icon="👑",
-            title="Administrator",
-            description="Full access to all features\nManage users, inventory & settings",
-            color=Colors.ADMIN,
-            hover_color=Colors.ADMIN_DARK
+        # Admin Button
+        admin_btn = tk.Button(
+            main,
+            text="👑  Administrator\n\nFull access to all features",
+            font=("Arial", 12),
+            bg=Colors.ADMIN,
+            fg="white",
+            activebackground=Colors.ADMIN_DARK,
+            activeforeground="white",
+            relief=tk.FLAT,
+            cursor="hand2",
+            width=30,
+            height=4,
+            command=lambda: self._select_role(UserRole.ADMIN)
         )
+        admin_btn.pack(pady=10, ipady=10)
         
-        # Spacer
-        tk.Frame(main, bg=Colors.BG, height=15).pack()
-        
-        # User Card
-        self._create_role_card(
-            cards,
-            role=UserRole.USER,
-            icon="👤",
-            title="Staff User",
-            description="Create orders & manage customers\nView inventory & print receipts",
-            color=Colors.USER,
-            hover_color=Colors.USER_DARK
+        # User Button
+        user_btn = tk.Button(
+            main,
+            text="👤  Staff User\n\nCreate orders & manage customers",
+            font=("Arial", 12),
+            bg=Colors.USER,
+            fg="white",
+            activebackground=Colors.USER_DARK,
+            activeforeground="white",
+            relief=tk.FLAT,
+            cursor="hand2",
+            width=30,
+            height=4,
+            command=lambda: self._select_role(UserRole.USER)
         )
+        user_btn.pack(pady=10, ipady=10)
         
-        # === FOOTER ===
-        footer = tk.Frame(main, bg=Colors.BG)
-        footer.pack(side=tk.BOTTOM, fill=tk.X, pady=(30, 0))
+        # Footer
+        tk.Label(
+            main,
+            text="─" * 40,
+            font=("Arial", 8),
+            bg=bg,
+            fg="#ccc"
+        ).pack(pady=(30, 5))
         
         tk.Label(
-            footer,
-            text="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-            font=("Segoe UI", 8),
-            bg=Colors.BG,
-            fg=Colors.BORDER
+            main,
+            text="Abaad 3D Printing Services\nIsmailia, Egypt",
+            font=("Arial", 9),
+            bg=bg,
+            fg="#888"
         ).pack()
-        
-        tk.Label(
-            footer,
-            text="Abaad 3D Printing Services",
-            font=("Segoe UI", 10, "bold"),
-            bg=Colors.BG,
-            fg=Colors.TEXT_SECONDARY
-        ).pack(pady=(10, 2))
-        
-        tk.Label(
-            footer,
-            text="Ismailia, Egypt • 01070750477",
-            font=("Segoe UI", 9),
-            bg=Colors.BG,
-            fg=Colors.TEXT_LIGHT
-        ).pack()
-    
-    def _create_role_card(self, parent, role, icon, title, description, color, hover_color):
-        """Create a clickable role card"""
-        # Card frame
-        card = tk.Frame(
-            parent,
-            bg=Colors.CARD,
-            highlightbackground=Colors.BORDER,
-            highlightthickness=2,
-            cursor="hand2"
-        )
-        card.pack(fill=tk.X, pady=5, ipady=15)
-        
-        # Inner container
-        inner = tk.Frame(card, bg=Colors.CARD)
-        inner.pack(fill=tk.X, padx=20, pady=10)
-        
-        # Left: Icon
-        icon_frame = tk.Frame(inner, bg=color, width=60, height=60)
-        icon_frame.pack(side=tk.LEFT, padx=(0, 20))
-        icon_frame.pack_propagate(False)
-        
-        icon_label = tk.Label(
-            icon_frame,
-            text=icon,
-            font=("Segoe UI", 28),
-            bg=color,
-            fg="white"
-        )
-        icon_label.pack(expand=True)
-        
-        # Right: Text
-        text_frame = tk.Frame(inner, bg=Colors.CARD)
-        text_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        title_label = tk.Label(
-            text_frame,
-            text=title,
-            font=("Segoe UI", 14, "bold"),
-            bg=Colors.CARD,
-            fg=Colors.TEXT,
-            anchor=tk.W
-        )
-        title_label.pack(anchor=tk.W)
-        
-        desc_label = tk.Label(
-            text_frame,
-            text=description,
-            font=("Segoe UI", 10),
-            bg=Colors.CARD,
-            fg=Colors.TEXT_SECONDARY,
-            anchor=tk.W,
-            justify=tk.LEFT
-        )
-        desc_label.pack(anchor=tk.W, pady=(5, 0))
-        
-        # Arrow
-        arrow_label = tk.Label(
-            inner,
-            text="→",
-            font=("Segoe UI", 20),
-            bg=Colors.CARD,
-            fg=Colors.TEXT_LIGHT
-        )
-        arrow_label.pack(side=tk.RIGHT, padx=(10, 0))
-        
-        # Hover effects
-        def on_enter(e):
-            card.configure(highlightbackground=color, highlightthickness=3)
-            inner.configure(bg=Colors.CARD_HOVER)
-            text_frame.configure(bg=Colors.CARD_HOVER)
-            title_label.configure(bg=Colors.CARD_HOVER)
-            desc_label.configure(bg=Colors.CARD_HOVER)
-            arrow_label.configure(bg=Colors.CARD_HOVER, fg=color)
-        
-        def on_leave(e):
-            card.configure(highlightbackground=Colors.BORDER, highlightthickness=2)
-            inner.configure(bg=Colors.CARD)
-            text_frame.configure(bg=Colors.CARD)
-            title_label.configure(bg=Colors.CARD)
-            desc_label.configure(bg=Colors.CARD)
-            arrow_label.configure(bg=Colors.CARD, fg=Colors.TEXT_LIGHT)
-        
-        def on_click(e):
-            self._select_role(role)
-        
-        # Bind events to all elements
-        for widget in [card, inner, icon_frame, icon_label, text_frame, 
-                       title_label, desc_label, arrow_label]:
-            widget.bind('<Enter>', on_enter)
-            widget.bind('<Leave>', on_leave)
-            widget.bind('<Button-1>', on_click)
     
     def _select_role(self, role: UserRole):
         """Handle role selection"""
-        # Create or get user for this role
-        if role == UserRole.ADMIN:
-            # Use default admin
-            user = self.auth.users.get('admin_default')
-            if not user:
-                user = User(
-                    id='admin_default',
-                    username='admin',
-                    role=UserRole.ADMIN.value,
-                    display_name='Administrator'
-                )
-                user.set_password('admin')
-                self.auth.users[user.id] = user
-                self.auth._save_users()
-        else:
-            # Use or create default user
-            user = self.auth.users.get('user_default')
-            if not user:
-                user = User(
-                    id='user_default',
-                    username='user',
-                    role=UserRole.USER.value,
-                    display_name='Staff User'
-                )
-                user.set_password('user')
-                self.auth.users[user.id] = user
-                self.auth._save_users()
-        
-        # Set as current user
-        user.record_login()
-        self.auth._save_users()
-        self.auth._current_user = user
-        
-        self.result = True
-        self.user = user
-        self.dialog.destroy()
+        try:
+            # Create or get user for this role
+            if role == UserRole.ADMIN:
+                user = self.auth.users.get('admin_default')
+                if not user:
+                    user = User(
+                        id='admin_default',
+                        username='admin',
+                        role=UserRole.ADMIN.value,
+                        display_name='Administrator'
+                    )
+                    user.set_password('admin')
+                    self.auth.users[user.id] = user
+                    self.auth._save_users()
+            else:
+                user = self.auth.users.get('user_default')
+                if not user:
+                    user = User(
+                        id='user_default',
+                        username='user',
+                        role=UserRole.USER.value,
+                        display_name='Staff User'
+                    )
+                    user.set_password('user')
+                    self.auth.users[user.id] = user
+                    self.auth._save_users()
+            
+            # Set as current user
+            user.record_login()
+            self.auth._save_users()
+            self.auth._current_user = user
+            
+            self.result = True
+            self.user = user
+            self.dialog.destroy()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to login: {e}")
     
     def _on_exit(self):
         """Handle window close"""
         self.result = False
         self.dialog.destroy()
-        self.parent.destroy()
-        sys.exit(0)
 
 
 class ChangePasswordDialog:
-    """Dialog for users to change their password (kept for compatibility)"""
+    """Dialog for profile info (kept for compatibility)"""
     
     def __init__(self, parent):
         self.parent = parent
-        self.result = False
         self.auth = get_auth_manager()
         
-        # Simple info dialog instead
-        from tkinter import messagebox
-        messagebox.showinfo(
-            "Profile Settings",
-            f"Logged in as: {self.auth.current_user.display_name}\n"
-            f"Role: {self.auth.current_user.role}\n\n"
-            "Password settings are disabled in quick-start mode."
-        )
+        if self.auth.current_user:
+            messagebox.showinfo(
+                "Profile",
+                f"Logged in as: {self.auth.current_user.display_name}\n"
+                f"Role: {self.auth.current_user.role}\n\n"
+                "Use Switch button to change roles."
+            )
 
 
 # Compatibility alias
@@ -401,7 +270,8 @@ if __name__ == "__main__":
     
     if dialog.result:
         print(f"Selected: {dialog.user.display_name} ({dialog.user.role})")
+        root.deiconify()
+        root.mainloop()
     else:
         print("Cancelled")
-    
-    root.mainloop()
+        root.destroy()
