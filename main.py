@@ -1,6 +1,6 @@
 """
 Abaad 3D Print Manager v4.0 (ERP Edition)
-Main Application Entry Point
+Main Application Entry Point with RBAC
 """
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
@@ -19,36 +19,32 @@ from src import (
     TOLERANCE_THRESHOLD_GRAMS, calculate_payment_fee
 )
 
+from src.logic import (
+    get_auth_manager, get_cura_vision, UserRole, Permission,
+    PILLOW_AVAILABLE, TESSERACT_AVAILABLE
+)
+
+from src.ui import LoginDialog, ChangePasswordDialog, AdminPanel, Colors
+
 try:
     from src.utils import generate_receipt, generate_quote, generate_invoice, REPORTLAB_AVAILABLE
 except ImportError:
     REPORTLAB_AVAILABLE = False
 
 try:
-    from src.logic import get_cura_vision
+    from src.logic import extract_from_cura_screenshot
     CURA_VISION_AVAILABLE = get_cura_vision().is_available
 except:
     CURA_VISION_AVAILABLE = False
 
 
-class Colors:
-    PRIMARY = "#2563eb"
-    SUCCESS = "#22c55e"
-    DANGER = "#ef4444"
-    WARNING = "#f59e0b"
-    INFO = "#06b6d4"
-    RD = "#7c3aed"
-    BG = "#f8fafc"
-    CARD = "#ffffff"
-    TEXT = "#1e293b"
-    TEXT_LIGHT = "#64748b"
-
-
 class App:
-    def __init__(self, root):
+    def __init__(self, root, user):
         self.root = root
-        self.root.title("Abaad 3D Print Manager v4.0 (ERP Edition)")
-        self.root.geometry("1450x900")
+        self.user = user
+        self.auth = get_auth_manager()
+        self.root.title(f"Abaad 3D Print Manager v4.0 (ERP Edition) - {user.display_name or user.username}")
+        self.root.geometry("1500x950")
         self.root.configure(bg=Colors.BG)
         
         self.db = get_database()
@@ -66,31 +62,80 @@ class App:
         style.configure("TLabel", background=Colors.BG)
         style.configure("TNotebook.Tab", padding=[15, 8], font=("Segoe UI", 10))
         style.configure("Title.TLabel", font=("Segoe UI", 14, "bold"))
+        style.configure("Admin.TNotebook.Tab", background=Colors.PURPLE)
     
     def _build_ui(self):
         # Header
         header = tk.Frame(self.root, bg=Colors.PRIMARY, height=60)
         header.pack(fill=tk.X)
         header.pack_propagate(False)
+        
         tk.Label(header, text="🖨️ Abaad 3D Print Manager v4.0", font=("Segoe UI", 18, "bold"),
                 fg="white", bg=Colors.PRIMARY).pack(side=tk.LEFT, padx=15, pady=12)
         
+        # User info and logout button
+        user_frame = tk.Frame(header, bg=Colors.PRIMARY)
+        user_frame.pack(side=tk.RIGHT, padx=15)
+        
+        role_color = "#22c55e" if self.user.role == UserRole.ADMIN.value else "#f59e0b"
+        role_text = "👑 Admin" if self.user.role == UserRole.ADMIN.value else "👤 User"
+        
+        tk.Label(user_frame, text=f"{self.user.display_name or self.user.username}", 
+                font=("Segoe UI", 10, "bold"), fg="white", bg=Colors.PRIMARY).pack(side=tk.LEFT, padx=5)
+        tk.Label(user_frame, text=role_text, font=("Segoe UI", 9), 
+                fg=role_color, bg=Colors.PRIMARY).pack(side=tk.LEFT, padx=5)
+        
+        tk.Button(user_frame, text="🔐", font=("Segoe UI", 9), 
+                 command=self._change_password, relief=tk.FLAT,
+                 bg=Colors.PRIMARY, fg="white", cursor="hand2").pack(side=tk.LEFT, padx=3)
+        tk.Button(user_frame, text="🚪 Logout", font=("Segoe UI", 9), 
+                 command=self._logout, relief=tk.FLAT,
+                 bg="#ef4444", fg="white", cursor="hand2").pack(side=tk.LEFT, padx=3)
+        
+        # Status indicators
         status_frame = tk.Frame(header, bg=Colors.PRIMARY)
         status_frame.pack(side=tk.RIGHT, padx=15)
         if CURA_VISION_AVAILABLE:
-            tk.Label(status_frame, text="🤖 AI", fg="#22c55e", bg=Colors.PRIMARY).pack(side=tk.LEFT, padx=3)
+            tk.Label(status_frame, text="🤖 AI", fg="#22c55e", bg=Colors.PRIMARY, 
+                    font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=3)
         if REPORTLAB_AVAILABLE:
-            tk.Label(status_frame, text="📄 PDF", fg="#22c55e", bg=Colors.PRIMARY).pack(side=tk.LEFT, padx=3)
+            tk.Label(status_frame, text="📄 PDF", fg="#22c55e", bg=Colors.PRIMARY,
+                    font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=3)
         
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
+        # Build tabs based on user permissions
         self._build_orders_tab()
         self._build_customers_tab()
         self._build_filament_tab()
         self._build_printers_tab()
-        self._build_stats_tab()
-        self._build_settings_tab()
+        
+        # Admin-only tabs
+        if self.auth.has_permission(Permission.VIEW_STATISTICS):
+            self._build_stats_tab()
+        
+        if self.auth.has_permission(Permission.MANAGE_SETTINGS):
+            self._build_settings_tab()
+        
+        if self.auth.has_permission(Permission.MANAGE_USERS):
+            self._build_admin_tab()
+    
+    def _build_admin_tab(self):
+        """Admin Panel tab - Admin only"""
+        admin_panel = AdminPanel(self.notebook, self.db)
+        self.notebook.add(admin_panel, text="👑 Admin Panel")
+    
+    def _change_password(self):
+        """Open change password dialog"""
+        ChangePasswordDialog(self.root)
+    
+    def _logout(self):
+        """Logout current user and show login"""
+        if messagebox.askyesno("Logout", "Are you sure you want to logout?"):
+            self.auth.logout()
+            self.root.destroy()
+            main()  # Restart with login
     
     def _build_orders_tab(self):
         tab = ttk.Frame(self.notebook, padding=10)
@@ -231,7 +276,7 @@ class App:
         ttk.Label(row_t3, text="Profit:").pack(side=tk.LEFT, padx=(15, 0))
         self.profit_lbl = ttk.Label(row_t3, text="0.00", foreground=Colors.SUCCESS)
         self.profit_lbl.pack(side=tk.LEFT, padx=5)
-        self.rd_cost_lbl = ttk.Label(row_t3, text="", foreground=Colors.RD)
+        self.rd_cost_lbl = ttk.Label(row_t3, text="", foreground=Colors.PURPLE)
         self.rd_cost_lbl.pack(side=tk.LEFT, padx=10)
         
         actions = ttk.Frame(right)
@@ -240,7 +285,11 @@ class App:
         ttk.Button(actions, text="📄 Quote", command=self._gen_quote_pdf).pack(side=tk.LEFT, padx=2)
         ttk.Button(actions, text="🧾 Receipt", command=self._gen_receipt_pdf).pack(side=tk.LEFT, padx=2)
         ttk.Button(actions, text="📋 Text", command=self._gen_receipt).pack(side=tk.LEFT, padx=2)
-        ttk.Button(actions, text="🗑️", command=self._delete_order).pack(side=tk.LEFT, padx=2)
+        
+        # Only show delete for users with permission
+        if self.auth.has_permission(Permission.DELETE_ORDER):
+            ttk.Button(actions, text="🗑️", command=self._delete_order).pack(side=tk.LEFT, padx=2)
+        
         ttk.Button(actions, text="✨ New", command=self._new_order).pack(side=tk.LEFT, padx=2)
         
         ttk.Label(right, text="Notes:").pack(anchor=tk.W, pady=(5, 0))
@@ -257,7 +306,9 @@ class App:
         header = ttk.Frame(left)
         header.pack(fill=tk.X)
         ttk.Label(header, text="Customer Archive", style="Title.TLabel").pack(side=tk.LEFT)
-        ttk.Button(header, text="+ Add", command=self._add_customer).pack(side=tk.RIGHT)
+        
+        if self.auth.has_permission(Permission.MANAGE_CUSTOMERS):
+            ttk.Button(header, text="+ Add", command=self._add_customer).pack(side=tk.RIGHT)
         
         self.cust_search = ttk.Entry(left, width=30)
         self.cust_search.pack(fill=tk.X, pady=5)
@@ -290,9 +341,14 @@ class App:
         
         btn_f = ttk.Frame(right)
         btn_f.pack(fill=tk.X, pady=5)
-        ttk.Button(btn_f, text="Save", command=self._save_customer).pack(side=tk.LEFT, padx=3)
+        
+        if self.auth.has_permission(Permission.MANAGE_CUSTOMERS):
+            ttk.Button(btn_f, text="Save", command=self._save_customer).pack(side=tk.LEFT, padx=3)
+        
         ttk.Button(btn_f, text="New Order", command=self._order_for_cust).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_f, text="Delete", command=self._del_customer).pack(side=tk.LEFT, padx=3)
+        
+        if self.auth.has_permission(Permission.MANAGE_CUSTOMERS):
+            ttk.Button(btn_f, text="Delete", command=self._del_customer).pack(side=tk.LEFT, padx=3)
     
     def _build_filament_tab(self):
         tab = ttk.Frame(self.notebook, padding=10)
@@ -301,8 +357,10 @@ class App:
         header = ttk.Frame(tab)
         header.pack(fill=tk.X)
         ttk.Label(header, text="Filament Inventory", style="Title.TLabel").pack(side=tk.LEFT)
-        ttk.Button(header, text="+ New Spool (840)", command=self._add_new_spool).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(header, text="+ Remaining (FREE)", command=self._add_remaining_spool).pack(side=tk.RIGHT, padx=5)
+        
+        if self.auth.has_permission(Permission.MANAGE_INVENTORY):
+            ttk.Button(header, text="+ New Spool (840)", command=self._add_new_spool).pack(side=tk.RIGHT, padx=5)
+            ttk.Button(header, text="+ Remaining (FREE)", command=self._add_remaining_spool).pack(side=tk.RIGHT, padx=5)
         
         self.spool_summary = ttk.Label(tab, text="")
         self.spool_summary.pack(anchor=tk.W, pady=5)
@@ -316,9 +374,12 @@ class App:
         
         btn_f = ttk.Frame(tab)
         btn_f.pack(fill=tk.X, pady=5)
-        ttk.Button(btn_f, text="Edit", command=self._edit_spool).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_f, text="Delete", command=self._del_spool).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_f, text="🗑️ Trash", command=self._move_to_trash).pack(side=tk.LEFT, padx=3)
+        
+        if self.auth.has_permission(Permission.MANAGE_INVENTORY):
+            ttk.Button(btn_f, text="Edit", command=self._edit_spool).pack(side=tk.LEFT, padx=3)
+            ttk.Button(btn_f, text="Delete", command=self._del_spool).pack(side=tk.LEFT, padx=3)
+            ttk.Button(btn_f, text="🗑️ Trash", command=self._move_to_trash).pack(side=tk.LEFT, padx=3)
+        
         ttk.Button(btn_f, text="📜 History", command=self._view_filament_history).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_f, text="Refresh", command=self._load_spools).pack(side=tk.LEFT, padx=3)
     
@@ -329,7 +390,9 @@ class App:
         header = ttk.Frame(tab)
         header.pack(fill=tk.X)
         ttk.Label(header, text="Printer Management", style="Title.TLabel").pack(side=tk.LEFT)
-        ttk.Button(header, text="+ Add Printer", command=self._add_printer).pack(side=tk.RIGHT)
+        
+        if self.auth.has_permission(Permission.MANAGE_PRINTERS):
+            ttk.Button(header, text="+ Add Printer", command=self._add_printer).pack(side=tk.RIGHT)
         
         cols = ("Name", "Model", "Printed", "Time", "Nozzles", "Elec Cost", "Status")
         self.printers_tree = ttk.Treeview(tab, columns=cols, show="headings", height=10)
@@ -346,10 +409,13 @@ class App:
         
         btn_f = ttk.Frame(tab)
         btn_f.pack(fill=tk.X)
-        ttk.Button(btn_f, text="Edit", command=self._edit_printer).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_f, text="Reset Nozzle", command=self._reset_nozzle).pack(side=tk.LEFT, padx=3)
+        
+        if self.auth.has_permission(Permission.MANAGE_PRINTERS):
+            ttk.Button(btn_f, text="Edit", command=self._edit_printer).pack(side=tk.LEFT, padx=3)
+            ttk.Button(btn_f, text="Reset Nozzle", command=self._reset_nozzle).pack(side=tk.LEFT, padx=3)
     
     def _build_stats_tab(self):
+        """Statistics tab - Admin only"""
         tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(tab, text="📊 Statistics")
         
@@ -379,9 +445,12 @@ class App:
         btn_f = ttk.Frame(tab)
         btn_f.pack(pady=20)
         ttk.Button(btn_f, text="🔄 Refresh", command=self._load_stats).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_f, text="📤 Export CSV", command=self._export_csv).pack(side=tk.LEFT, padx=5)
+        
+        if self.auth.has_permission(Permission.EXPORT_DATA):
+            ttk.Button(btn_f, text="📤 Export CSV", command=self._export_csv).pack(side=tk.LEFT, padx=5)
     
     def _build_settings_tab(self):
+        """Settings tab - Admin only"""
         tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(tab, text="⚙️ Settings")
         
@@ -418,7 +487,9 @@ class App:
         btn_f = ttk.Frame(tab)
         btn_f.pack(fill=tk.X, pady=10)
         ttk.Button(btn_f, text="💾 Save Settings", command=self._save_settings).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_f, text="📦 Backup", command=self._backup).pack(side=tk.LEFT, padx=5)
+        
+        if self.auth.has_permission(Permission.SYSTEM_BACKUP):
+            ttk.Button(btn_f, text="📦 Backup", command=self._backup).pack(side=tk.LEFT, padx=5)
 
     # === DATA LOADING ===
     def _load_all_data(self):
@@ -426,7 +497,8 @@ class App:
         self._load_customers()
         self._load_spools()
         self._load_printers()
-        self._load_stats()
+        if hasattr(self, 'stat_lbls'):
+            self._load_stats()
     
     def _load_orders(self):
         for i in self.orders_tree.get_children():
@@ -800,7 +872,7 @@ class App:
     def _show_item_dialog(self, item=None):
         dlg = tk.Toplevel(self.root)
         dlg.title("Add/Edit Item")
-        dlg.geometry("550x520")
+        dlg.geometry("550x550")
         dlg.transient(self.root)
         dlg.grab_set()
         
@@ -817,9 +889,12 @@ class App:
         name_e.insert(0, item.name)
         name_e.grid(row=0, column=1, columnspan=2, pady=3, padx=5)
         
+        # Cura Vision AI buttons
         if CURA_VISION_AVAILABLE:
+            ai_frame = ttk.Frame(main)
+            ai_frame.grid(row=0, column=3, padx=5)
+            
             def paste_cura():
-                from src.logic import extract_from_cura_screenshot
                 r = extract_from_cura_screenshot()
                 if r:
                     if r.get('weight_grams'):
@@ -830,10 +905,11 @@ class App:
                         hours_e.insert(0, str(r['time_minutes'] // 60))
                         mins_e.delete(0, tk.END)
                         mins_e.insert(0, str(r['time_minutes'] % 60))
-                    messagebox.showinfo("Cura AI", f"Extracted: {r.get('weight_grams', 'N/A')}g, {r.get('time_minutes', 'N/A')}min")
+                    messagebox.showinfo("🤖 Cura AI", f"Extracted:\n• Weight: {r.get('weight_grams', 'N/A')}g\n• Time: {r.get('time_minutes', 'N/A')}min")
                 else:
-                    messagebox.showwarning("Cura AI", "Could not extract data")
-            ttk.Button(main, text="🤖 Paste from Cura", command=paste_cura).grid(row=0, column=3, padx=5)
+                    messagebox.showwarning("🤖 Cura AI", "Could not extract data from clipboard.\nMake sure you copied a Cura screenshot.")
+            
+            ttk.Button(ai_frame, text="📷 Paste from Cura", command=paste_cura).pack()
         
         ttk.Label(main, text="Weight (g):*").grid(row=1, column=0, sticky=tk.W, pady=3)
         weight_e = ttk.Entry(main, width=12)
@@ -977,7 +1053,8 @@ class App:
         
         if self.db.move_spool_to_trash(spool.id, reason or "End of life"):
             self._load_spools()
-            self._load_stats()
+            if hasattr(self, 'stat_lbls'):
+                self._load_stats()
             messagebox.showinfo("Trashed", f"Spool moved to trash history.")
 
     def _view_filament_history(self):
@@ -1044,7 +1121,9 @@ class App:
         brand_c = None
         if not is_remaining:
             ttk.Label(form, text="Brand:").grid(row=1, column=0, sticky=tk.W, pady=3)
-            brand_c = ttk.Combobox(form, values=["eSUN", "Sunlu", "Creality", "Other"], width=20)
+            settings = self.db.get_settings()
+            brands = settings.get('filament_brands', ["eSUN", "Sunlu", "Creality", "Other"])
+            brand_c = ttk.Combobox(form, values=brands, width=20)
             brand_c.set(spool.brand)
             brand_c.grid(row=1, column=1, sticky=tk.W, pady=3, padx=5)
         
@@ -1090,7 +1169,7 @@ class App:
     def _add_customer(self):
         self.selected_customer = None
         self._clear_customer_form()
-        self.cust_name.focus()
+        self.cd_name.focus()
     
     def _clear_customer_form(self):
         self.cd_name.delete(0, tk.END)
@@ -1125,7 +1204,6 @@ class App:
             messagebox.showwarning("Error", "Name is required")
             return
         
-        # Update existing or create new
         if self.selected_customer:
             c = self.selected_customer
             c.name = name
@@ -1137,7 +1215,6 @@ class App:
                 pass
             self.db.save_customer(c)
         else:
-            # New customer
             c = Customer(name=name, phone=phone, email=self.cd_email.get().strip())
             try:
                 c.discount_percent = float(self.cd_discount.get() or 0)
@@ -1162,7 +1239,7 @@ class App:
         if not self.selected_customer:
             messagebox.showwarning("Select", "Select a customer first")
             return
-        self.notebook.select(0) # Go to Orders tab
+        self.notebook.select(0)
         self._new_order()
         self.cust_name.delete(0, tk.END)
         self.cust_name.insert(0, self.selected_customer.name)
@@ -1262,9 +1339,21 @@ class App:
 
 
 def main():
+    """Main entry point with login"""
     root = tk.Tk()
-    app = App(root)
-    root.mainloop()
+    root.withdraw()  # Hide main window during login
+    
+    # Show login dialog
+    login_dialog = LoginDialog(root)
+    
+    if login_dialog.result and login_dialog.user:
+        # Login successful - show main app
+        root.deiconify()  # Show main window
+        app = App(root, login_dialog.user)
+        root.mainloop()
+    else:
+        # Login failed or cancelled
+        root.destroy()
 
 
 if __name__ == "__main__":

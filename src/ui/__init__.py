@@ -1,4 +1,18 @@
 """
-UI Components for Abaad 3D Print Manager v4.0
+Abaad ERP v4.0 - UI Module
+All Tkinter frames, dialogs, and components
 """
-# UI is implemented in main.py for simplicity
+from .login import LoginDialog, ChangePasswordDialog, show_login, Colors
+from .admin_panel import (
+    AdminPanel, UserManagementFrame, 
+    FilamentConfigFrame, PrinterProfilesFrame
+)
+
+__all__ = [
+    # Login
+    'LoginDialog', 'ChangePasswordDialog', 'show_login', 'Colors',
+    
+    # Admin Panel
+    'AdminPanel', 'UserManagementFrame',
+    'FilamentConfigFrame', 'PrinterProfilesFrame',
+]

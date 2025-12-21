@@ -175,7 +175,7 @@ class DatabaseManager:
         """Direct deduction (backward compatibility)"""
         return self.commit_filament(spool_id, grams)
     
-    def move_spool_to_trash(self, spool_id: str) -> bool:
+    def move_spool_to_trash(self, spool_id: str, reason: str = "trash") -> bool:
         """Move spool to trash and create history record"""
         spool = self.get_spool(spool_id)
         if not spool:
@@ -190,7 +190,7 @@ class DatabaseManager:
             used_weight=spool.used_weight_grams,
             remaining_weight=spool.current_weight_grams,
             waste_weight=spool.current_weight_grams,  # Remaining = waste
-            reason="trash"
+            reason=reason
         )
         self.data['filament_history'][history.id] = history.to_dict()
         

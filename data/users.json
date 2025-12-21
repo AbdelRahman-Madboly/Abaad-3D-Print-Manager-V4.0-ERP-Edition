@@ -1,0 +1,18 @@
+{
+  "users": [
+    {
+      "id": "admin_default",
+      "username": "admin",
+      "password_hash": "88de4103a9a0f1ca8cb522f2f88805f39d848241d0faccd94ec507c93588d227",
+      "password_salt": "39c5485530ae27a26330d6b435e69321",
+      "role": "Admin",
+      "display_name": "Administrator",
+      "email": "",
+      "is_active": true,
+      "created_date": "2025-12-21 05:15:38",
+      "last_login": "",
+      "login_count": 0,
+      "notes": "Default admin account"
+    }
+  ]
+}
