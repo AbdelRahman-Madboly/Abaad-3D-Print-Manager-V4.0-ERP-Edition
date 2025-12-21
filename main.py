@@ -1488,20 +1488,116 @@ class App:
 
 
 def main():
-    """Main entry point with login"""
+    """Main entry point with role selection"""
+    import tkinter.simpledialog as simpledialog
+    
+    # Create hidden root
     root = tk.Tk()
-    root.withdraw()  # Hide main window during login
+    root.withdraw()
     
-    # Show login dialog
-    login_dialog = LoginDialog(root)
+    # Simple role selection popup
+    auth = get_auth_manager()
     
-    if login_dialog.result and login_dialog.user:
-        # Login successful - show main app
-        root.deiconify()  # Show main window
-        app = App(root, login_dialog.user)
+    # Create selection window
+    select_win = tk.Toplevel(root)
+    select_win.title("Abaad ERP v4.0")
+    select_win.geometry("400x350")
+    select_win.resizable(False, False)
+    select_win.configure(bg="#f0f4f8")
+    
+    # Center on screen
+    select_win.update_idletasks()
+    x = (select_win.winfo_screenwidth() - 400) // 2
+    y = (select_win.winfo_screenheight() - 350) // 2
+    select_win.geometry(f"400x350+{x}+{y}")
+    
+    selected_user = [None]  # Use list to modify in nested function
+    
+    def select_admin():
+        user = auth.users.get('admin_default')
+        if not user:
+            from src.logic.auth import User, UserRole
+            user = User(
+                id='admin_default',
+                username='admin', 
+                role=UserRole.ADMIN.value,
+                display_name='Administrator'
+            )
+            user.set_password('admin')
+            auth.users[user.id] = user
+            auth._save_users()
+        auth._current_user = user
+        selected_user[0] = user
+        select_win.destroy()
+    
+    def select_user():
+        user = auth.users.get('user_default')
+        if not user:
+            from src.logic.auth import User, UserRole
+            user = User(
+                id='user_default',
+                username='user',
+                role=UserRole.USER.value, 
+                display_name='Staff User'
+            )
+            user.set_password('user')
+            auth.users[user.id] = user
+            auth._save_users()
+        auth._current_user = user
+        selected_user[0] = user
+        select_win.destroy()
+    
+    def on_close():
+        select_win.destroy()
+        root.destroy()
+    
+    select_win.protocol("WM_DELETE_WINDOW", on_close)
+    
+    # Header
+    header = tk.Frame(select_win, bg="#2563eb", height=70)
+    header.pack(fill=tk.X)
+    header.pack_propagate(False)
+    tk.Label(header, text="🖨️ Abaad ERP v4.0", font=("Arial", 18, "bold"),
+             bg="#2563eb", fg="white").pack(expand=True)
+    
+    # Content
+    content = tk.Frame(select_win, bg="#f0f4f8")
+    content.pack(fill=tk.BOTH, expand=True, padx=30, pady=20)
+    
+    tk.Label(content, text="Select Your Role:", font=("Arial", 14, "bold"),
+             bg="#f0f4f8", fg="#333").pack(pady=(0, 20))
+    
+    # Admin button
+    admin_btn = tk.Button(content, text="👑 Administrator\n(Full Access)", 
+                         font=("Arial", 12), bg="#7c3aed", fg="white",
+                         activebackground="#6d28d9", activeforeground="white",
+                         width=25, height=3, relief=tk.FLAT, cursor="hand2",
+                         command=select_admin)
+    admin_btn.pack(pady=8)
+    
+    # User button  
+    user_btn = tk.Button(content, text="👤 Staff User\n(Orders & Customers)",
+                        font=("Arial", 12), bg="#0891b2", fg="white",
+                        activebackground="#0e7490", activeforeground="white",
+                        width=25, height=3, relief=tk.FLAT, cursor="hand2",
+                        command=select_user)
+    user_btn.pack(pady=8)
+    
+    # Footer
+    tk.Label(content, text="Abaad 3D Printing • Ismailia", font=("Arial", 9),
+             bg="#f0f4f8", fg="#888").pack(side=tk.BOTTOM, pady=10)
+    
+    # Focus and wait
+    select_win.focus_force()
+    select_win.grab_set()
+    root.wait_window(select_win)
+    
+    # After selection
+    if selected_user[0]:
+        root.deiconify()
+        app = App(root, selected_user[0])
         root.mainloop()
     else:
-        # Login failed or cancelled
         root.destroy()
 
 
