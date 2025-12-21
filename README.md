@@ -1,5 +1,4 @@
 # Abaad 3D Print Manager v4.0 (ERP Edition)
-git remote add origin https://github.com/AbdelRahman-Madboly/Abaad-3D-Print-Manager-v4.0-ERP-Edition.git
 
 A complete Windows desktop application for managing 3D printing orders with advanced ERP features and AI integration.
 

@@ -1,8 +1,0 @@
-# Abaad 3D Print Manager v3.0
-# Core app uses only Python standard library - no dependencies needed!
-
-# For PDF Receipt Generation (recommended):
-reportlab>=4.0.0
-
-# Optional - for screenshot capture:
-# Pillow>=10.0.0
