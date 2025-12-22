@@ -1,5 +1,5 @@
 @echo off
-title Abaad 3D Print Manager v4.0
+title Abaad ERP v4.0 - 3D Print Manager
 color 0B
 
 :: Change to script directory
@@ -16,7 +16,12 @@ if not exist "venv\Scripts\python.exe" (
 )
 
 :: Run with virtual environment
-echo Starting Abaad 3D Print Manager v4.0...
+echo.
+echo  =============================================
+echo     ABAAD ERP v4.0 - 3D Print Manager
+echo  =============================================
+echo.
+echo  Starting application...
 echo.
 venv\Scripts\python.exe main.py
 

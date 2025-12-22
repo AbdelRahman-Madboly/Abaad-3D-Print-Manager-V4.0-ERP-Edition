@@ -9,8 +9,8 @@ from .models import (
     DEFAULT_RATE_PER_GRAM, DEFAULT_COST_PER_GRAM, SPOOL_PRICE_FIXED,
     TRASH_THRESHOLD_GRAMS, TOLERANCE_THRESHOLD_GRAMS,
     calculate_payment_fee,
-    # New models for failures and expenses
-    PrintFailure, Expense, FailureReason, ExpenseCategory
+    # Models for failures and expenses
+    PrintFailure, Expense, FailureReason, ExpenseCategory, FailureSource
 )
 
 from .database import DatabaseManager, get_database
@@ -25,6 +25,6 @@ __all__ = [
     'now_str', 'DEFAULT_RATE_PER_GRAM', 'DEFAULT_COST_PER_GRAM', 'SPOOL_PRICE_FIXED',
     'TRASH_THRESHOLD_GRAMS', 'TOLERANCE_THRESHOLD_GRAMS',
     'calculate_payment_fee', 'DatabaseManager', 'get_database',
-    # New exports
-    'PrintFailure', 'Expense', 'FailureReason', 'ExpenseCategory',
+    # Failures and expenses
+    'PrintFailure', 'Expense', 'FailureReason', 'ExpenseCategory', 'FailureSource',
 ]

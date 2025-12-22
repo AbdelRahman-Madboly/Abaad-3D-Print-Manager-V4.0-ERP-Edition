@@ -73,13 +73,23 @@ class FailureReason(str, Enum):
 
 class ExpenseCategory(str, Enum):
     """Expense categories for tracking costs"""
+    BILLS = "Bills"  # Electricity, internet, rent, etc.
+    ENGINEER = "Engineer"  # Operator salary/wages
     TOOLS = "Tools"  # Nozzles, spatulas, etc.
     CONSUMABLES = "Consumables"  # Glue, tape, alcohol, etc.
     MAINTENANCE = "Maintenance"  # Repairs, parts replacement
-    UTILITIES = "Utilities"  # Extra electricity, internet
+    FILAMENT = "Filament"  # Extra filament purchases
     PACKAGING = "Packaging"  # Boxes, bags, labels
     SHIPPING = "Shipping"  # Shipping supplies
     SOFTWARE = "Software"  # Subscriptions, licenses
+    OTHER = "Other"
+
+
+class FailureSource(str, Enum):
+    """Source of the failed print"""
+    CUSTOMER_ORDER = "Customer Order"
+    RD_PROJECT = "R&D Project"
+    PERSONAL = "Personal/Test"
     OTHER = "Other"
 
 
@@ -863,9 +873,13 @@ class PrintFailure:
     id: str = field(default_factory=generate_id)
     date: str = field(default_factory=now_str)
     
+    # Source of the failure
+    source: str = FailureSource.OTHER.value  # Customer Order, R&D, Personal, Other
+    
     # What failed
     order_id: str = ""  # Optional link to order
     order_number: int = 0
+    customer_name: str = ""  # Customer name if from order
     item_name: str = ""  # What was being printed
     
     # Failure details
@@ -902,8 +916,10 @@ class PrintFailure:
         return {
             'id': self.id,
             'date': self.date,
+            'source': self.source,
             'order_id': self.order_id,
             'order_number': self.order_number,
+            'customer_name': self.customer_name,
             'item_name': self.item_name,
             'reason': self.reason,
             'description': self.description,
@@ -925,8 +941,10 @@ class PrintFailure:
         f = cls()
         f.id = data.get('id', generate_id())
         f.date = data.get('date', now_str())
+        f.source = data.get('source', FailureSource.OTHER.value)
         f.order_id = data.get('order_id', '')
         f.order_number = data.get('order_number', 0)
+        f.customer_name = data.get('customer_name', '')
         f.item_name = data.get('item_name', '')
         f.reason = data.get('reason', FailureReason.OTHER.value)
         f.description = data.get('description', '')

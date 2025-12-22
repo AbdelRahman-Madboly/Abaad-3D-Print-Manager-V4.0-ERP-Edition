@@ -18,8 +18,8 @@ from src import (
     SpoolCategory, SpoolStatus, format_time, generate_id, now_str,
     DEFAULT_RATE_PER_GRAM, DEFAULT_COST_PER_GRAM, TRASH_THRESHOLD_GRAMS,
     TOLERANCE_THRESHOLD_GRAMS, calculate_payment_fee,
-    # New imports for failures and expenses
-    PrintFailure, Expense, FailureReason, ExpenseCategory
+    # Failures and expenses
+    PrintFailure, Expense, FailureReason, ExpenseCategory, FailureSource
 )
 
 from src.logic import (
@@ -53,10 +53,16 @@ class App:
         
         # Try to set window icon
         try:
-            icon_path = Path(__file__).parent / "assets" / "Abaad.png"
-            if icon_path.exists():
-                img = tk.PhotoImage(file=str(icon_path))
-                self.root.iconphoto(True, img)
+            # Try ICO first (Windows)
+            ico_path = Path(__file__).parent / "assets" / "Print3D_Manager.ico"
+            if ico_path.exists():
+                self.root.iconbitmap(str(ico_path))
+            else:
+                # Fallback to PNG
+                png_path = Path(__file__).parent / "assets" / "Abaad.png"
+                if png_path.exists():
+                    img = tk.PhotoImage(file=str(png_path))
+                    self.root.iconphoto(True, img)
         except:
             pass
         
@@ -587,10 +593,20 @@ class App:
         self.failure_summary = ttk.Label(tab, text="Loading...", style="Subtitle.TLabel")
         self.failure_summary.pack(anchor=tk.W, pady=5)
         
+        # Filter
+        filter_f = ttk.Frame(tab)
+        filter_f.pack(fill=tk.X, pady=5)
+        ttk.Label(filter_f, text="Source:").pack(side=tk.LEFT)
+        self.failure_filter = ttk.Combobox(filter_f, values=["All"] + [s.value for s in FailureSource],
+                                          state="readonly", width=15)
+        self.failure_filter.set("All")
+        self.failure_filter.pack(side=tk.LEFT, padx=5)
+        self.failure_filter.bind('<<ComboboxSelected>>', lambda e: self._load_failures())
+        
         # Failures list
-        cols = ("Date", "Item", "Reason", "Filament", "Time", "Cost", "Printer")
+        cols = ("Date", "Source", "Order/Item", "Reason", "Filament", "Cost")
         self.failures_tree = ttk.Treeview(tab, columns=cols, show="headings", height=12)
-        for col, w in zip(cols, [90, 150, 120, 70, 60, 70, 100]):
+        for col, w in zip(cols, [90, 110, 180, 130, 70, 70]):
             self.failures_tree.heading(col, text=col)
             self.failures_tree.column(col, width=w)
         self.failures_tree.pack(fill=tk.BOTH, expand=True, pady=5)
@@ -1637,7 +1653,11 @@ class App:
         for i in self.failures_tree.get_children():
             self.failures_tree.delete(i)
         
+        source_filter = self.failure_filter.get() if hasattr(self, 'failure_filter') else "All"
         failures = self.db.get_all_failures()
+        if source_filter != "All":
+            failures = [f for f in failures if f.source == source_filter]
+        
         total_cost = sum(f.total_loss for f in failures)
         total_filament = sum(f.filament_wasted_grams for f in failures)
         
@@ -1646,11 +1666,18 @@ class App:
         )
         
         for f in failures:
+            # Show order info or item name
+            if f.source == FailureSource.CUSTOMER_ORDER.value and f.order_number:
+                order_item = f"#{f.order_number} - {f.customer_name or f.item_name}"
+            elif f.source == FailureSource.RD_PROJECT.value:
+                order_item = f"🔬 {f.item_name or 'R&D'}"
+            else:
+                order_item = f.item_name or "Unknown"
+            
             self.failures_tree.insert("", tk.END, iid=f.id, values=(
-                f.date.split()[0], f.item_name or "Unknown",
-                f.reason, f"{f.filament_wasted_grams:.0f}g",
-                f"{f.time_wasted_minutes}m", f"{f.total_loss:.0f}",
-                f.printer_name or "-"
+                f.date.split()[0], f.source,
+                order_item, f.reason, 
+                f"{f.filament_wasted_grams:.0f}g", f"{f.total_loss:.0f}"
             ))
     
     def _on_failure_select(self, event):
@@ -1660,10 +1687,15 @@ class App:
             return
         f = self.db.get_failure(sel[0])
         if f:
-            details = f"Item: {f.item_name}\nReason: {f.reason}\n"
+            details = f"Source: {f.source}\n"
+            if f.order_number:
+                details += f"Order: #{f.order_number} ({f.customer_name})\n"
+            details += f"Item: {f.item_name}\nReason: {f.reason}\n"
             details += f"Filament: {f.filament_wasted_grams}g ({f.color})\n"
             details += f"Time: {f.time_wasted_minutes} minutes\n"
-            details += f"Cost: {f.total_loss:.2f} EGP\n"
+            details += f"Cost: {f.total_loss:.2f} EGP (Material: {f.filament_cost:.2f} + Elec: {f.electricity_cost:.2f})\n"
+            if f.printer_name:
+                details += f"Printer: {f.printer_name}\n"
             if f.description:
                 details += f"Notes: {f.description}"
             self.failure_detail.config(text=details)
@@ -1672,61 +1704,135 @@ class App:
         """Add new failure dialog"""
         dlg = tk.Toplevel(self.root)
         dlg.title("Log Print Failure")
-        dlg.geometry("450x500")
+        dlg.geometry("500x620")
         dlg.transient(self.root)
         dlg.grab_set()
+        
+        # Center dialog
+        dlg.update_idletasks()
+        x = (dlg.winfo_screenwidth() - 500) // 2
+        y = (dlg.winfo_screenheight() - 620) // 2
+        dlg.geometry(f"500x620+{x}+{y}")
         
         main = ttk.Frame(dlg, padding=15)
         main.pack(fill=tk.BOTH, expand=True)
         
-        ttk.Label(main, text="⚠️ Log Print Failure", font=("Segoe UI", 14, "bold")).pack(anchor=tk.W, pady=(0, 15))
+        ttk.Label(main, text="⚠️ Log Print Failure", font=("Segoe UI", 14, "bold")).pack(anchor=tk.W, pady=(0, 10))
+        
+        # Source selection
+        source_f = ttk.LabelFrame(main, text="Failure Source", padding=10)
+        source_f.pack(fill=tk.X, pady=(0, 10))
+        
+        source_var = tk.StringVar(value=FailureSource.OTHER.value)
+        order_data = {'id': '', 'number': 0, 'customer': ''}
+        
+        # Get orders for dropdown
+        orders = self.db.get_all_orders()
+        order_list = [f"#{o.order_number} - {o.customer_name or 'Walk-in'}" for o in orders[:50]]
+        order_ids = {f"#{o.order_number} - {o.customer_name or 'Walk-in'}": o for o in orders[:50]}
+        
+        ttk.Radiobutton(source_f, text="📦 Customer Order", variable=source_var, 
+                       value=FailureSource.CUSTOMER_ORDER.value).pack(anchor=tk.W)
+        
+        order_frame = ttk.Frame(source_f)
+        order_frame.pack(fill=tk.X, padx=20, pady=5)
+        order_c = ttk.Combobox(order_frame, values=order_list, width=40, state="readonly")
+        order_c.pack(side=tk.LEFT)
+        
+        ttk.Radiobutton(source_f, text="🔬 R&D Project", variable=source_var,
+                       value=FailureSource.RD_PROJECT.value).pack(anchor=tk.W)
+        ttk.Radiobutton(source_f, text="🧪 Personal/Test", variable=source_var,
+                       value=FailureSource.PERSONAL.value).pack(anchor=tk.W)
+        ttk.Radiobutton(source_f, text="❓ Other", variable=source_var,
+                       value=FailureSource.OTHER.value).pack(anchor=tk.W)
         
         # Item name
         ttk.Label(main, text="What was printing:").pack(anchor=tk.W)
-        item_e = ttk.Entry(main, width=40)
-        item_e.pack(fill=tk.X, pady=(0, 10))
+        item_e = ttk.Entry(main, width=45)
+        item_e.pack(fill=tk.X, pady=(0, 8))
+        
+        # Auto-fill item name when order selected
+        def on_order_select(e):
+            source_var.set(FailureSource.CUSTOMER_ORDER.value)
+            sel = order_c.get()
+            if sel in order_ids:
+                order = order_ids[sel]
+                order_data['id'] = order.id
+                order_data['number'] = order.order_number
+                order_data['customer'] = order.customer_name
+                if order.items:
+                    item_e.delete(0, tk.END)
+                    item_e.insert(0, order.items[0].name)
+        order_c.bind('<<ComboboxSelected>>', on_order_select)
         
         # Reason
         ttk.Label(main, text="Failure Reason:").pack(anchor=tk.W)
-        reason_c = ttk.Combobox(main, values=[r.value for r in FailureReason], state="readonly", width=38)
+        reason_c = ttk.Combobox(main, values=[r.value for r in FailureReason], state="readonly", width=35)
         reason_c.set(FailureReason.OTHER.value)
-        reason_c.pack(fill=tk.X, pady=(0, 10))
+        reason_c.pack(anchor=tk.W, pady=(0, 8))
         
-        # Filament wasted
-        ttk.Label(main, text="Filament Wasted (grams):").pack(anchor=tk.W)
-        filament_e = ttk.Entry(main, width=15)
+        # Filament and Time row
+        ft_frame = ttk.Frame(main)
+        ft_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        ttk.Label(ft_frame, text="Filament (g):").pack(side=tk.LEFT)
+        filament_e = ttk.Entry(ft_frame, width=10)
         filament_e.insert(0, "0")
-        filament_e.pack(anchor=tk.W, pady=(0, 10))
+        filament_e.pack(side=tk.LEFT, padx=(5, 20))
         
-        # Time wasted
-        ttk.Label(main, text="Time Wasted (minutes):").pack(anchor=tk.W)
-        time_e = ttk.Entry(main, width=15)
+        ttk.Label(ft_frame, text="Time (min):").pack(side=tk.LEFT)
+        time_e = ttk.Entry(ft_frame, width=10)
         time_e.insert(0, "0")
-        time_e.pack(anchor=tk.W, pady=(0, 10))
+        time_e.pack(side=tk.LEFT, padx=5)
         
-        # Color/Spool
-        ttk.Label(main, text="Filament Color:").pack(anchor=tk.W)
+        # Color and Printer row
+        cp_frame = ttk.Frame(main)
+        cp_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        ttk.Label(cp_frame, text="Color:").pack(side=tk.LEFT)
         colors = self.db.get_colors()
-        color_c = ttk.Combobox(main, values=colors, width=20)
+        color_c = ttk.Combobox(cp_frame, values=colors, width=12)
         color_c.set(colors[0] if colors else "")
-        color_c.pack(anchor=tk.W, pady=(0, 10))
+        color_c.pack(side=tk.LEFT, padx=(5, 20))
         
-        # Printer
-        ttk.Label(main, text="Printer:").pack(anchor=tk.W)
+        ttk.Label(cp_frame, text="Printer:").pack(side=tk.LEFT)
         printers = self.db.get_all_printers()
-        printer_c = ttk.Combobox(main, values=[p.name for p in printers], width=25)
+        printer_c = ttk.Combobox(cp_frame, values=[p.name for p in printers], width=15)
         if printers:
             printer_c.set(printers[0].name)
-        printer_c.pack(anchor=tk.W, pady=(0, 10))
+        printer_c.pack(side=tk.LEFT, padx=5)
         
         # Description
-        ttk.Label(main, text="Description:").pack(anchor=tk.W)
-        desc_e = tk.Text(main, height=3, width=40)
-        desc_e.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(main, text="Description/Notes:").pack(anchor=tk.W)
+        desc_e = tk.Text(main, height=3, width=45)
+        desc_e.pack(fill=tk.X, pady=(0, 8))
+        
+        # Cost preview
+        cost_lbl = ttk.Label(main, text="Estimated Loss: 0 EGP", font=("Segoe UI", 11, "bold"),
+                            foreground=Colors.DANGER)
+        cost_lbl.pack(anchor=tk.W, pady=5)
+        
+        def update_cost(*args):
+            try:
+                grams = float(filament_e.get() or 0)
+                mins = int(time_e.get() or 0)
+                filament_cost = grams * 0.84  # 840 EGP per 1000g
+                elec_cost = (mins / 60) * 0.31
+                total = filament_cost + elec_cost
+                cost_lbl.config(text=f"Estimated Loss: {total:.2f} EGP (Material: {filament_cost:.2f} + Elec: {elec_cost:.2f})")
+            except:
+                pass
+        
+        filament_e.bind('<KeyRelease>', update_cost)
+        time_e.bind('<KeyRelease>', update_cost)
         
         def save():
             try:
                 failure = PrintFailure(
+                    source=source_var.get(),
+                    order_id=order_data['id'] if source_var.get() == FailureSource.CUSTOMER_ORDER.value else '',
+                    order_number=order_data['number'] if source_var.get() == FailureSource.CUSTOMER_ORDER.value else 0,
+                    customer_name=order_data['customer'] if source_var.get() == FailureSource.CUSTOMER_ORDER.value else '',
                     item_name=item_e.get().strip() or "Unknown",
                     reason=reason_c.get(),
                     filament_wasted_grams=float(filament_e.get() or 0),
@@ -1753,7 +1859,7 @@ class App:
         
         btn_f = ttk.Frame(main)
         btn_f.pack(fill=tk.X, pady=10)
-        ttk.Button(btn_f, text="💾 Save", command=save).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="💾 Save Failure", command=save).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="Cancel", command=dlg.destroy).pack(side=tk.LEFT, padx=5)
     
     def _delete_failure(self):
@@ -1810,50 +1916,86 @@ class App:
         """Add new expense dialog"""
         dlg = tk.Toplevel(self.root)
         dlg.title("Add Expense")
-        dlg.geometry("400x450")
+        dlg.geometry("450x520")
         dlg.transient(self.root)
         dlg.grab_set()
+        
+        # Center dialog
+        dlg.update_idletasks()
+        x = (dlg.winfo_screenwidth() - 450) // 2
+        y = (dlg.winfo_screenheight() - 520) // 2
+        dlg.geometry(f"450x520+{x}+{y}")
         
         main = ttk.Frame(dlg, padding=15)
         main.pack(fill=tk.BOTH, expand=True)
         
-        ttk.Label(main, text="💰 Add Business Expense", font=("Segoe UI", 14, "bold")).pack(anchor=tk.W, pady=(0, 15))
+        ttk.Label(main, text="💰 Add Business Expense", font=("Segoe UI", 14, "bold")).pack(anchor=tk.W, pady=(0, 10))
         
-        # Category
-        ttk.Label(main, text="Category:").pack(anchor=tk.W)
-        category_c = ttk.Combobox(main, values=[c.value for c in ExpenseCategory], state="readonly", width=25)
-        category_c.set(ExpenseCategory.CONSUMABLES.value)
-        category_c.pack(anchor=tk.W, pady=(0, 10))
+        # Category with icons
+        cat_f = ttk.LabelFrame(main, text="Category", padding=10)
+        cat_f.pack(fill=tk.X, pady=(0, 10))
+        
+        category_icons = {
+            ExpenseCategory.BILLS.value: "📄 Bills (Electricity, Internet, Rent)",
+            ExpenseCategory.ENGINEER.value: "👨‍🔧 Engineer/Operator Salary",
+            ExpenseCategory.TOOLS.value: "🔧 Tools (Nozzles, Spatulas)",
+            ExpenseCategory.CONSUMABLES.value: "🧴 Consumables (Glue, Tape, Alcohol)",
+            ExpenseCategory.MAINTENANCE.value: "🔩 Maintenance & Repairs",
+            ExpenseCategory.FILAMENT.value: "🎨 Filament Purchases",
+            ExpenseCategory.PACKAGING.value: "📦 Packaging Materials",
+            ExpenseCategory.SOFTWARE.value: "💻 Software & Subscriptions",
+            ExpenseCategory.OTHER.value: "📌 Other Expenses",
+        }
+        
+        category_c = ttk.Combobox(cat_f, values=list(category_icons.values()), state="readonly", width=40)
+        category_c.set(category_icons[ExpenseCategory.BILLS.value])
+        category_c.pack(fill=tk.X)
         
         # Name
-        ttk.Label(main, text="Item Name:").pack(anchor=tk.W)
-        name_e = ttk.Entry(main, width=40)
-        name_e.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(main, text="Description/Item Name:").pack(anchor=tk.W, pady=(5, 0))
+        name_e = ttk.Entry(main, width=45)
+        name_e.pack(fill=tk.X, pady=(0, 8))
         
-        # Amount
-        ttk.Label(main, text="Amount (EGP each):").pack(anchor=tk.W)
-        amount_e = ttk.Entry(main, width=15)
+        # Common items suggestions based on category
+        suggestions = {
+            "Bills": ["Electricity Bill", "Internet Bill", "Rent", "Water Bill", "Phone Bill"],
+            "Engineer": ["Monthly Salary", "Weekly Wages", "Overtime", "Bonus"],
+            "Tools": ["Nozzle 0.4mm", "Spatula", "Pliers", "Scraper", "Cutting Mat"],
+            "Consumables": ["3D Glue Stick", "Masking Tape", "IPA Alcohol", "Lubricant", "Cleaning Cloth"],
+        }
+        
+        # Amount and Quantity row
+        aq_frame = ttk.Frame(main)
+        aq_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        ttk.Label(aq_frame, text="Amount (EGP):").pack(side=tk.LEFT)
+        amount_e = ttk.Entry(aq_frame, width=12)
         amount_e.insert(0, "0")
-        amount_e.pack(anchor=tk.W, pady=(0, 10))
+        amount_e.pack(side=tk.LEFT, padx=(5, 20))
         
-        # Quantity
-        ttk.Label(main, text="Quantity:").pack(anchor=tk.W)
-        qty_e = ttk.Entry(main, width=10)
+        ttk.Label(aq_frame, text="Quantity:").pack(side=tk.LEFT)
+        qty_e = ttk.Entry(aq_frame, width=8)
         qty_e.insert(0, "1")
-        qty_e.pack(anchor=tk.W, pady=(0, 10))
+        qty_e.pack(side=tk.LEFT, padx=5)
+        
+        # Recurring option
+        recurring_var = tk.BooleanVar(value=False)
+        recurring_cb = ttk.Checkbutton(main, text="📅 Recurring expense (monthly)", variable=recurring_var)
+        recurring_cb.pack(anchor=tk.W, pady=(5, 8))
         
         # Supplier
-        ttk.Label(main, text="Supplier (optional):").pack(anchor=tk.W)
-        supplier_e = ttk.Entry(main, width=30)
-        supplier_e.pack(anchor=tk.W, pady=(0, 10))
+        ttk.Label(main, text="Supplier/Vendor (optional):").pack(anchor=tk.W)
+        supplier_e = ttk.Entry(main, width=35)
+        supplier_e.pack(anchor=tk.W, pady=(0, 8))
         
         # Description
-        ttk.Label(main, text="Description:").pack(anchor=tk.W)
-        desc_e = tk.Text(main, height=2, width=40)
-        desc_e.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(main, text="Notes:").pack(anchor=tk.W)
+        desc_e = tk.Text(main, height=2, width=45)
+        desc_e.pack(fill=tk.X, pady=(0, 8))
         
         # Total display
-        total_lbl = ttk.Label(main, text="Total: 0 EGP", font=("Segoe UI", 12, "bold"))
+        total_lbl = ttk.Label(main, text="Total: 0 EGP", font=("Segoe UI", 12, "bold"),
+                             foreground=Colors.WARNING)
         total_lbl.pack(anchor=tk.W, pady=5)
         
         def update_total(*args):
@@ -1871,16 +2013,26 @@ class App:
             try:
                 name = name_e.get().strip()
                 if not name:
-                    messagebox.showwarning("Error", "Enter item name")
+                    messagebox.showwarning("Error", "Enter description/name")
                     return
                 
+                # Extract category from display text
+                cat_display = category_c.get()
+                category = ExpenseCategory.OTHER.value
+                for cat, display in category_icons.items():
+                    if display == cat_display:
+                        category = cat
+                        break
+                
                 expense = Expense(
-                    category=category_c.get(),
+                    category=category,
                     name=name,
                     amount=float(amount_e.get() or 0),
                     quantity=int(qty_e.get() or 1),
                     supplier=supplier_e.get().strip(),
-                    description=desc_e.get("1.0", tk.END).strip()
+                    description=desc_e.get("1.0", tk.END).strip(),
+                    is_recurring=recurring_var.get(),
+                    recurring_period="monthly" if recurring_var.get() else ""
                 )
                 expense.calculate_total()
                 
@@ -1895,7 +2047,7 @@ class App:
         
         btn_f = ttk.Frame(main)
         btn_f.pack(fill=tk.X, pady=10)
-        ttk.Button(btn_f, text="💾 Save", command=save).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="💾 Save Expense", command=save).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="Cancel", command=dlg.destroy).pack(side=tk.LEFT, padx=5)
     
     def _edit_expense(self):
