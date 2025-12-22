@@ -17,7 +17,9 @@ from src import (
     PrintSettings, FilamentHistory, OrderStatus, PaymentMethod, SupportType, 
     SpoolCategory, SpoolStatus, format_time, generate_id, now_str,
     DEFAULT_RATE_PER_GRAM, DEFAULT_COST_PER_GRAM, TRASH_THRESHOLD_GRAMS,
-    TOLERANCE_THRESHOLD_GRAMS, calculate_payment_fee
+    TOLERANCE_THRESHOLD_GRAMS, calculate_payment_fee,
+    # New imports for failures and expenses
+    PrintFailure, Expense, FailureReason, ExpenseCategory
 )
 
 from src.logic import (
@@ -175,6 +177,8 @@ class App:
         self._build_customers_tab()
         self._build_filament_tab()
         self._build_printers_tab()
+        self._build_failures_tab()  # NEW: Print failures tracking
+        self._build_expenses_tab()  # NEW: Business expenses tracking
         
         # Admin-only tabs
         if self.auth.has_permission(Permission.VIEW_STATISTICS):
@@ -563,36 +567,168 @@ class App:
             ttk.Button(btn_f, text="Edit", command=self._edit_printer).pack(side=tk.LEFT, padx=3)
             ttk.Button(btn_f, text="Reset Nozzle", command=self._reset_nozzle).pack(side=tk.LEFT, padx=3)
     
+    def _build_failures_tab(self):
+        """Print failures tracking tab"""
+        tab = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(tab, text="⚠️ Failures")
+        
+        # Header
+        header = ttk.Frame(tab)
+        header.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(header, text="⚠️ Print Failures", style="Title.TLabel").pack(side=tk.LEFT)
+        
+        add_btn = tk.Button(header, text="➕ Log Failure", font=("Segoe UI", 10, "bold"),
+                           bg=Colors.DANGER, fg="white", relief=tk.FLAT, padx=15, pady=5,
+                           cursor="hand2", command=self._add_failure)
+        add_btn.pack(side=tk.RIGHT)
+        
+        # Summary
+        self.failure_summary = ttk.Label(tab, text="Loading...", style="Subtitle.TLabel")
+        self.failure_summary.pack(anchor=tk.W, pady=5)
+        
+        # Failures list
+        cols = ("Date", "Item", "Reason", "Filament", "Time", "Cost", "Printer")
+        self.failures_tree = ttk.Treeview(tab, columns=cols, show="headings", height=12)
+        for col, w in zip(cols, [90, 150, 120, 70, 60, 70, 100]):
+            self.failures_tree.heading(col, text=col)
+            self.failures_tree.column(col, width=w)
+        self.failures_tree.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # Details panel
+        detail_f = ttk.LabelFrame(tab, text="Failure Details", padding=10)
+        detail_f.pack(fill=tk.X, pady=5)
+        self.failure_detail = ttk.Label(detail_f, text="Select a failure to view details")
+        self.failure_detail.pack(anchor=tk.W)
+        self.failures_tree.bind('<<TreeviewSelect>>', self._on_failure_select)
+        
+        # Buttons
+        btn_f = ttk.Frame(tab)
+        btn_f.pack(fill=tk.X, pady=5)
+        ttk.Button(btn_f, text="🔄 Refresh", command=self._load_failures).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_f, text="🗑️ Delete", command=self._delete_failure).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_f, text="📊 Stats", command=self._show_failure_stats).pack(side=tk.LEFT, padx=3)
+    
+    def _build_expenses_tab(self):
+        """Business expenses tracking tab"""
+        tab = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(tab, text="💰 Expenses")
+        
+        # Header
+        header = ttk.Frame(tab)
+        header.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(header, text="💰 Business Expenses", style="Title.TLabel").pack(side=tk.LEFT)
+        
+        add_btn = tk.Button(header, text="➕ Add Expense", font=("Segoe UI", 10, "bold"),
+                           bg=Colors.WARNING, fg="white", relief=tk.FLAT, padx=15, pady=5,
+                           cursor="hand2", command=self._add_expense)
+        add_btn.pack(side=tk.RIGHT)
+        
+        # Summary
+        self.expense_summary = ttk.Label(tab, text="Loading...", style="Subtitle.TLabel")
+        self.expense_summary.pack(anchor=tk.W, pady=5)
+        
+        # Category filter
+        filter_f = ttk.Frame(tab)
+        filter_f.pack(fill=tk.X, pady=5)
+        ttk.Label(filter_f, text="Category:").pack(side=tk.LEFT)
+        self.expense_filter = ttk.Combobox(filter_f, values=["All"] + [c.value for c in ExpenseCategory],
+                                          state="readonly", width=15)
+        self.expense_filter.set("All")
+        self.expense_filter.pack(side=tk.LEFT, padx=5)
+        self.expense_filter.bind('<<ComboboxSelected>>', lambda e: self._load_expenses())
+        
+        # Expenses list
+        cols = ("Date", "Category", "Name", "Qty", "Amount", "Total", "Supplier")
+        self.expenses_tree = ttk.Treeview(tab, columns=cols, show="headings", height=12)
+        for col, w in zip(cols, [90, 100, 180, 40, 80, 80, 120]):
+            self.expenses_tree.heading(col, text=col)
+            self.expenses_tree.column(col, width=w)
+        self.expenses_tree.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # Buttons
+        btn_f = ttk.Frame(tab)
+        btn_f.pack(fill=tk.X, pady=5)
+        ttk.Button(btn_f, text="🔄 Refresh", command=self._load_expenses).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_f, text="✏️ Edit", command=self._edit_expense).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_f, text="🗑️ Delete", command=self._delete_expense).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_f, text="📊 Summary", command=self._show_expense_summary).pack(side=tk.LEFT, padx=3)
+    
     def _build_stats_tab(self):
         """Statistics tab - Admin only"""
         tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(tab, text="📊 Statistics")
         
-        ttk.Label(tab, text="Business Dashboard", style="Title.TLabel").pack(anchor=tk.W, pady=(0, 15))
+        ttk.Label(tab, text="Business Dashboard", style="Title.TLabel").pack(anchor=tk.W, pady=(0, 10))
         
         self.stat_lbls = {}
-        cards = ttk.Frame(tab)
-        cards.pack(fill=tk.X)
         
-        stats = [("Orders", "orders"), ("Completed", "completed"), ("R&D", "rd"), ("Revenue", "revenue"), 
-                 ("Profit", "profit"), ("Margin", "margin"), ("Material", "material"), ("Electricity", "electricity"),
-                 ("Nozzle", "nozzle"), ("Shipping", "shipping"), ("Fees", "fees"), ("Rounding", "rounding"),
-                 ("Weight", "weight"), ("Waste", "waste"), ("Customers", "custs"), ("Tolerance", "tolerance")]
+        # Revenue section
+        rev_f = ttk.LabelFrame(tab, text="💵 Revenue & Profit", padding=10)
+        rev_f.pack(fill=tk.X, pady=5)
+        rev_cards = ttk.Frame(rev_f)
+        rev_cards.pack(fill=tk.X)
         
-        for i, (label, key) in enumerate(stats):
-            row, col = i // 4, i % 4
-            frame = tk.Frame(cards, bg=Colors.CARD, relief=tk.RIDGE, bd=1)
-            frame.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
-            tk.Label(frame, text=label, bg=Colors.CARD, fg=Colors.TEXT_LIGHT).pack(pady=(8, 0))
-            lbl = tk.Label(frame, text="0", bg=Colors.CARD, fg=Colors.PRIMARY, font=("Segoe UI", 14, "bold"))
+        rev_stats = [("Revenue", "revenue", Colors.PRIMARY), ("Gross Profit", "gross_profit", Colors.SUCCESS),
+                    ("Failures", "failures", Colors.DANGER), ("Expenses", "expenses", Colors.WARNING),
+                    ("NET PROFIT", "profit", Colors.SUCCESS)]
+        
+        for i, (label, key, color) in enumerate(rev_stats):
+            frame = tk.Frame(rev_cards, bg=Colors.CARD, relief=tk.RIDGE, bd=1)
+            frame.grid(row=0, column=i, padx=5, pady=5, sticky="nsew")
+            tk.Label(frame, text=label, bg=Colors.CARD, fg=Colors.TEXT_LIGHT, font=("Segoe UI", 9)).pack(pady=(8, 0))
+            lbl = tk.Label(frame, text="0", bg=Colors.CARD, fg=color, font=("Segoe UI", 14, "bold"))
             lbl.pack(pady=(0, 8))
             self.stat_lbls[key] = lbl
+        for i in range(5):
+            rev_cards.columnconfigure(i, weight=1)
         
+        # Orders section
+        ord_f = ttk.LabelFrame(tab, text="📦 Orders & Production", padding=10)
+        ord_f.pack(fill=tk.X, pady=5)
+        ord_cards = ttk.Frame(ord_f)
+        ord_cards.pack(fill=tk.X)
+        
+        ord_stats = [("Orders", "orders"), ("Completed", "completed"), ("R&D", "rd"), 
+                    ("Weight", "weight"), ("Margin %", "margin")]
+        
+        for i, (label, key) in enumerate(ord_stats):
+            frame = tk.Frame(ord_cards, bg=Colors.CARD, relief=tk.RIDGE, bd=1)
+            frame.grid(row=0, column=i, padx=5, pady=5, sticky="nsew")
+            tk.Label(frame, text=label, bg=Colors.CARD, fg=Colors.TEXT_LIGHT).pack(pady=(8, 0))
+            lbl = tk.Label(frame, text="0", bg=Colors.CARD, fg=Colors.PRIMARY, font=("Segoe UI", 12, "bold"))
+            lbl.pack(pady=(0, 8))
+            self.stat_lbls[key] = lbl
+        for i in range(5):
+            ord_cards.columnconfigure(i, weight=1)
+        
+        # Costs section
+        cost_f = ttk.LabelFrame(tab, text="📉 Costs Breakdown", padding=10)
+        cost_f.pack(fill=tk.X, pady=5)
+        cost_cards = ttk.Frame(cost_f)
+        cost_cards.pack(fill=tk.X)
+        
+        cost_stats = [("Material", "material"), ("Electricity", "electricity"), ("Nozzle", "nozzle"),
+                     ("Shipping", "shipping"), ("Fees", "fees"), ("Rounding", "rounding"),
+                     ("Waste", "waste"), ("Tolerance", "tolerance")]
+        
+        for i, (label, key) in enumerate(cost_stats):
+            row, col = i // 4, i % 4
+            frame = tk.Frame(cost_cards, bg=Colors.CARD, relief=tk.RIDGE, bd=1)
+            frame.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+            tk.Label(frame, text=label, bg=Colors.CARD, fg=Colors.TEXT_LIGHT).pack(pady=(5, 0))
+            lbl = tk.Label(frame, text="0", bg=Colors.CARD, fg=Colors.TEXT_SECONDARY, font=("Segoe UI", 11, "bold"))
+            lbl.pack(pady=(0, 5))
+            self.stat_lbls[key] = lbl
         for i in range(4):
-            cards.columnconfigure(i, weight=1)
+            cost_cards.columnconfigure(i, weight=1)
+        
+        # Customers stat
+        self.stat_lbls['custs'] = ttk.Label(tab, text="")
         
         btn_f = ttk.Frame(tab)
-        btn_f.pack(pady=20)
+        btn_f.pack(pady=10)
         ttk.Button(btn_f, text="🔄 Refresh", command=self._load_stats).pack(side=tk.LEFT, padx=5)
         
         if self.auth.has_permission(Permission.EXPORT_DATA):
@@ -646,6 +782,8 @@ class App:
         self._load_customers()
         self._load_spools()
         self._load_printers()
+        self._load_failures()
+        self._load_expenses()
         if hasattr(self, 'stat_lbls'):
             self._load_stats()
     
@@ -733,21 +871,26 @@ class App:
     
     def _load_stats(self):
         s = self.db.get_statistics()
+        # Revenue & Profit
+        self.stat_lbls['revenue'].config(text=f"{s.total_revenue:.0f}")
+        self.stat_lbls['gross_profit'].config(text=f"{s.gross_profit:.0f}")
+        self.stat_lbls['failures'].config(text=f"-{s.total_failure_cost:.0f}")
+        self.stat_lbls['expenses'].config(text=f"-{s.total_expenses:.0f}")
+        self.stat_lbls['profit'].config(text=f"{s.total_profit:.0f}")
+        # Orders
         self.stat_lbls['orders'].config(text=str(s.total_orders))
         self.stat_lbls['completed'].config(text=str(s.completed_orders))
         self.stat_lbls['rd'].config(text=str(s.rd_orders))
-        self.stat_lbls['revenue'].config(text=f"{s.total_revenue:.0f}")
-        self.stat_lbls['profit'].config(text=f"{s.total_profit:.0f}")
+        self.stat_lbls['weight'].config(text=f"{s.total_weight_printed:.0f}g")
+        self.stat_lbls['margin'].config(text=f"{s.profit_margin:.1f}%")
+        # Costs
         self.stat_lbls['material'].config(text=f"{s.total_material_cost:.0f}")
         self.stat_lbls['electricity'].config(text=f"{s.total_electricity_cost:.1f}")
         self.stat_lbls['nozzle'].config(text=f"{s.total_nozzle_cost:.0f}")
         self.stat_lbls['shipping'].config(text=f"{s.total_shipping:.0f}")
         self.stat_lbls['fees'].config(text=f"{s.total_payment_fees:.1f}")
         self.stat_lbls['rounding'].config(text=f"{s.total_rounding_loss:.1f}")
-        self.stat_lbls['weight'].config(text=f"{s.total_weight_printed:.0f}g")
         self.stat_lbls['waste'].config(text=f"{s.total_filament_waste:.0f}g")
-        self.stat_lbls['custs'].config(text=str(s.total_customers))
-        self.stat_lbls['margin'].config(text=f"{s.profit_margin:.1f}%")
         self.stat_lbls['tolerance'].config(text=f"{s.total_tolerance_discounts:.1f}")
 
     # === ORDER OPERATIONS ===
@@ -1485,6 +1628,307 @@ class App:
             messagebox.showinfo("Export", f"Exported:\n" + "\n".join(f"{k}: {v}" for k, v in files.items()))
         except Exception as e:
             messagebox.showerror("Error", str(e))
+    
+    # === FAILURES ===
+    def _load_failures(self):
+        """Load failures into the tree"""
+        if not hasattr(self, 'failures_tree'):
+            return
+        for i in self.failures_tree.get_children():
+            self.failures_tree.delete(i)
+        
+        failures = self.db.get_all_failures()
+        total_cost = sum(f.total_loss for f in failures)
+        total_filament = sum(f.filament_wasted_grams for f in failures)
+        
+        self.failure_summary.config(
+            text=f"📊 {len(failures)} failures | 💸 {total_cost:.0f} EGP lost | 🎨 {total_filament:.0f}g wasted"
+        )
+        
+        for f in failures:
+            self.failures_tree.insert("", tk.END, iid=f.id, values=(
+                f.date.split()[0], f.item_name or "Unknown",
+                f.reason, f"{f.filament_wasted_grams:.0f}g",
+                f"{f.time_wasted_minutes}m", f"{f.total_loss:.0f}",
+                f.printer_name or "-"
+            ))
+    
+    def _on_failure_select(self, event):
+        """Show failure details"""
+        sel = self.failures_tree.selection()
+        if not sel:
+            return
+        f = self.db.get_failure(sel[0])
+        if f:
+            details = f"Item: {f.item_name}\nReason: {f.reason}\n"
+            details += f"Filament: {f.filament_wasted_grams}g ({f.color})\n"
+            details += f"Time: {f.time_wasted_minutes} minutes\n"
+            details += f"Cost: {f.total_loss:.2f} EGP\n"
+            if f.description:
+                details += f"Notes: {f.description}"
+            self.failure_detail.config(text=details)
+    
+    def _add_failure(self):
+        """Add new failure dialog"""
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Log Print Failure")
+        dlg.geometry("450x500")
+        dlg.transient(self.root)
+        dlg.grab_set()
+        
+        main = ttk.Frame(dlg, padding=15)
+        main.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(main, text="⚠️ Log Print Failure", font=("Segoe UI", 14, "bold")).pack(anchor=tk.W, pady=(0, 15))
+        
+        # Item name
+        ttk.Label(main, text="What was printing:").pack(anchor=tk.W)
+        item_e = ttk.Entry(main, width=40)
+        item_e.pack(fill=tk.X, pady=(0, 10))
+        
+        # Reason
+        ttk.Label(main, text="Failure Reason:").pack(anchor=tk.W)
+        reason_c = ttk.Combobox(main, values=[r.value for r in FailureReason], state="readonly", width=38)
+        reason_c.set(FailureReason.OTHER.value)
+        reason_c.pack(fill=tk.X, pady=(0, 10))
+        
+        # Filament wasted
+        ttk.Label(main, text="Filament Wasted (grams):").pack(anchor=tk.W)
+        filament_e = ttk.Entry(main, width=15)
+        filament_e.insert(0, "0")
+        filament_e.pack(anchor=tk.W, pady=(0, 10))
+        
+        # Time wasted
+        ttk.Label(main, text="Time Wasted (minutes):").pack(anchor=tk.W)
+        time_e = ttk.Entry(main, width=15)
+        time_e.insert(0, "0")
+        time_e.pack(anchor=tk.W, pady=(0, 10))
+        
+        # Color/Spool
+        ttk.Label(main, text="Filament Color:").pack(anchor=tk.W)
+        colors = self.db.get_colors()
+        color_c = ttk.Combobox(main, values=colors, width=20)
+        color_c.set(colors[0] if colors else "")
+        color_c.pack(anchor=tk.W, pady=(0, 10))
+        
+        # Printer
+        ttk.Label(main, text="Printer:").pack(anchor=tk.W)
+        printers = self.db.get_all_printers()
+        printer_c = ttk.Combobox(main, values=[p.name for p in printers], width=25)
+        if printers:
+            printer_c.set(printers[0].name)
+        printer_c.pack(anchor=tk.W, pady=(0, 10))
+        
+        # Description
+        ttk.Label(main, text="Description:").pack(anchor=tk.W)
+        desc_e = tk.Text(main, height=3, width=40)
+        desc_e.pack(fill=tk.X, pady=(0, 10))
+        
+        def save():
+            try:
+                failure = PrintFailure(
+                    item_name=item_e.get().strip() or "Unknown",
+                    reason=reason_c.get(),
+                    filament_wasted_grams=float(filament_e.get() or 0),
+                    time_wasted_minutes=int(time_e.get() or 0),
+                    color=color_c.get(),
+                    description=desc_e.get("1.0", tk.END).strip(),
+                    printer_name=printer_c.get()
+                )
+                
+                # Find spool to deduct from
+                spools = self.db.get_spools_by_color(color_c.get())
+                if spools and failure.filament_wasted_grams > 0:
+                    failure.spool_id = spools[0].id
+                
+                self.db.save_failure(failure)
+                self._load_failures()
+                self._load_spools()
+                if hasattr(self, 'stat_lbls'):
+                    self._load_stats()
+                dlg.destroy()
+                messagebox.showinfo("Logged", f"Failure logged: {failure.total_loss:.2f} EGP loss")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+        
+        btn_f = ttk.Frame(main)
+        btn_f.pack(fill=tk.X, pady=10)
+        ttk.Button(btn_f, text="💾 Save", command=save).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="Cancel", command=dlg.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def _delete_failure(self):
+        """Delete selected failure"""
+        sel = self.failures_tree.selection()
+        if not sel:
+            messagebox.showwarning("Select", "Select a failure to delete")
+            return
+        if messagebox.askyesno("Confirm", "Delete this failure record?"):
+            self.db.delete_failure(sel[0])
+            self._load_failures()
+            if hasattr(self, 'stat_lbls'):
+                self._load_stats()
+    
+    def _show_failure_stats(self):
+        """Show failure statistics popup"""
+        stats = self.db.get_failure_stats()
+        msg = f"📊 Failure Statistics\n\n"
+        msg += f"Total Failures: {stats['total_failures']}\n"
+        msg += f"Total Cost: {stats['total_cost']:.0f} EGP\n"
+        msg += f"Filament Wasted: {stats['total_filament_wasted']:.0f}g\n"
+        msg += f"Time Wasted: {stats['total_time_wasted']} minutes\n\n"
+        msg += "By Reason:\n"
+        for reason, count in stats['by_reason'].items():
+            msg += f"  • {reason}: {count}\n"
+        messagebox.showinfo("Failure Statistics", msg)
+    
+    # === EXPENSES ===
+    def _load_expenses(self):
+        """Load expenses into the tree"""
+        if not hasattr(self, 'expenses_tree'):
+            return
+        for i in self.expenses_tree.get_children():
+            self.expenses_tree.delete(i)
+        
+        category = self.expense_filter.get() if hasattr(self, 'expense_filter') else "All"
+        expenses = self.db.get_all_expenses()
+        if category != "All":
+            expenses = [e for e in expenses if e.category == category]
+        
+        total = sum(e.total_cost for e in expenses)
+        self.expense_summary.config(
+            text=f"📊 {len(expenses)} expenses | 💰 {total:.0f} EGP total"
+        )
+        
+        for e in expenses:
+            self.expenses_tree.insert("", tk.END, iid=e.id, values=(
+                e.date.split()[0], e.category, e.name,
+                e.quantity, f"{e.amount:.0f}", f"{e.total_cost:.0f}",
+                e.supplier or "-"
+            ))
+    
+    def _add_expense(self):
+        """Add new expense dialog"""
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Add Expense")
+        dlg.geometry("400x450")
+        dlg.transient(self.root)
+        dlg.grab_set()
+        
+        main = ttk.Frame(dlg, padding=15)
+        main.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(main, text="💰 Add Business Expense", font=("Segoe UI", 14, "bold")).pack(anchor=tk.W, pady=(0, 15))
+        
+        # Category
+        ttk.Label(main, text="Category:").pack(anchor=tk.W)
+        category_c = ttk.Combobox(main, values=[c.value for c in ExpenseCategory], state="readonly", width=25)
+        category_c.set(ExpenseCategory.CONSUMABLES.value)
+        category_c.pack(anchor=tk.W, pady=(0, 10))
+        
+        # Name
+        ttk.Label(main, text="Item Name:").pack(anchor=tk.W)
+        name_e = ttk.Entry(main, width=40)
+        name_e.pack(fill=tk.X, pady=(0, 10))
+        
+        # Amount
+        ttk.Label(main, text="Amount (EGP each):").pack(anchor=tk.W)
+        amount_e = ttk.Entry(main, width=15)
+        amount_e.insert(0, "0")
+        amount_e.pack(anchor=tk.W, pady=(0, 10))
+        
+        # Quantity
+        ttk.Label(main, text="Quantity:").pack(anchor=tk.W)
+        qty_e = ttk.Entry(main, width=10)
+        qty_e.insert(0, "1")
+        qty_e.pack(anchor=tk.W, pady=(0, 10))
+        
+        # Supplier
+        ttk.Label(main, text="Supplier (optional):").pack(anchor=tk.W)
+        supplier_e = ttk.Entry(main, width=30)
+        supplier_e.pack(anchor=tk.W, pady=(0, 10))
+        
+        # Description
+        ttk.Label(main, text="Description:").pack(anchor=tk.W)
+        desc_e = tk.Text(main, height=2, width=40)
+        desc_e.pack(fill=tk.X, pady=(0, 10))
+        
+        # Total display
+        total_lbl = ttk.Label(main, text="Total: 0 EGP", font=("Segoe UI", 12, "bold"))
+        total_lbl.pack(anchor=tk.W, pady=5)
+        
+        def update_total(*args):
+            try:
+                amt = float(amount_e.get() or 0)
+                qty = int(qty_e.get() or 1)
+                total_lbl.config(text=f"Total: {amt * qty:.0f} EGP")
+            except:
+                pass
+        
+        amount_e.bind('<KeyRelease>', update_total)
+        qty_e.bind('<KeyRelease>', update_total)
+        
+        def save():
+            try:
+                name = name_e.get().strip()
+                if not name:
+                    messagebox.showwarning("Error", "Enter item name")
+                    return
+                
+                expense = Expense(
+                    category=category_c.get(),
+                    name=name,
+                    amount=float(amount_e.get() or 0),
+                    quantity=int(qty_e.get() or 1),
+                    supplier=supplier_e.get().strip(),
+                    description=desc_e.get("1.0", tk.END).strip()
+                )
+                expense.calculate_total()
+                
+                self.db.save_expense(expense)
+                self._load_expenses()
+                if hasattr(self, 'stat_lbls'):
+                    self._load_stats()
+                dlg.destroy()
+                messagebox.showinfo("Added", f"Expense added: {expense.total_cost:.0f} EGP")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+        
+        btn_f = ttk.Frame(main)
+        btn_f.pack(fill=tk.X, pady=10)
+        ttk.Button(btn_f, text="💾 Save", command=save).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="Cancel", command=dlg.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def _edit_expense(self):
+        """Edit selected expense"""
+        sel = self.expenses_tree.selection()
+        if not sel:
+            messagebox.showwarning("Select", "Select an expense to edit")
+            return
+        # For simplicity, just delete and re-add
+        messagebox.showinfo("Edit", "Delete and re-add to edit expense")
+    
+    def _delete_expense(self):
+        """Delete selected expense"""
+        sel = self.expenses_tree.selection()
+        if not sel:
+            messagebox.showwarning("Select", "Select an expense to delete")
+            return
+        if messagebox.askyesno("Confirm", "Delete this expense?"):
+            self.db.delete_expense(sel[0])
+            self._load_expenses()
+            if hasattr(self, 'stat_lbls'):
+                self._load_stats()
+    
+    def _show_expense_summary(self):
+        """Show expense summary popup"""
+        stats = self.db.get_expense_stats()
+        msg = f"📊 Expense Summary\n\n"
+        msg += f"Total Expenses: {stats['total_expenses']:.0f} EGP\n"
+        msg += f"Number of Items: {stats['expense_count']}\n\n"
+        msg += "By Category:\n"
+        for cat, total in stats['by_category'].items():
+            msg += f"  • {cat}: {total:.0f} EGP\n"
+        messagebox.showinfo("Expense Summary", msg)
 
 
 def main():

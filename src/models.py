@@ -53,6 +53,36 @@ class SpoolStatus(str, Enum):
     ARCHIVED = "archived"
 
 
+class FailureReason(str, Enum):
+    """Common print failure reasons"""
+    NOZZLE_CLOG = "Nozzle Clog"
+    BED_ADHESION = "Bed Adhesion"
+    LAYER_SHIFT = "Layer Shift"
+    FILAMENT_TANGLE = "Filament Tangle"
+    POWER_OUTAGE = "Power Outage"
+    STRINGING = "Stringing/Blobs"
+    WARPING = "Warping"
+    UNDER_EXTRUSION = "Under Extrusion"
+    OVER_EXTRUSION = "Over Extrusion"
+    BROKEN_PART = "Broken Part"
+    WRONG_SETTINGS = "Wrong Settings"
+    FILAMENT_RAN_OUT = "Filament Ran Out"
+    MACHINE_ERROR = "Machine Error"
+    OTHER = "Other"
+
+
+class ExpenseCategory(str, Enum):
+    """Expense categories for tracking costs"""
+    TOOLS = "Tools"  # Nozzles, spatulas, etc.
+    CONSUMABLES = "Consumables"  # Glue, tape, alcohol, etc.
+    MAINTENANCE = "Maintenance"  # Repairs, parts replacement
+    UTILITIES = "Utilities"  # Extra electricity, internet
+    PACKAGING = "Packaging"  # Boxes, bags, labels
+    SHIPPING = "Shipping"  # Shipping supplies
+    SOFTWARE = "Software"  # Subscriptions, licenses
+    OTHER = "Other"
+
+
 def generate_id() -> str:
     return str(uuid.uuid4())[:8]
 
@@ -828,38 +858,201 @@ class FilamentHistory:
 
 
 @dataclass
+class PrintFailure:
+    """Track failed prints with causes and costs"""
+    id: str = field(default_factory=generate_id)
+    date: str = field(default_factory=now_str)
+    
+    # What failed
+    order_id: str = ""  # Optional link to order
+    order_number: int = 0
+    item_name: str = ""  # What was being printed
+    
+    # Failure details
+    reason: str = FailureReason.OTHER.value
+    description: str = ""  # Detailed description
+    
+    # Time and material lost
+    filament_wasted_grams: float = 0.0
+    time_wasted_minutes: int = 0
+    spool_id: str = ""
+    color: str = ""
+    
+    # Cost calculation
+    filament_cost: float = 0.0  # Auto-calculated
+    electricity_cost: float = 0.0  # Auto-calculated
+    total_loss: float = 0.0  # Total cost of failure
+    
+    # Printer info
+    printer_id: str = ""
+    printer_name: str = ""
+    
+    # Resolution
+    resolved: bool = False
+    resolution_notes: str = ""
+    
+    def calculate_costs(self, cost_per_gram: float = DEFAULT_COST_PER_GRAM, 
+                       electricity_rate: float = 0.31):
+        """Calculate the cost of this failure"""
+        self.filament_cost = self.filament_wasted_grams * cost_per_gram
+        self.electricity_cost = (self.time_wasted_minutes / 60) * electricity_rate
+        self.total_loss = self.filament_cost + self.electricity_cost
+    
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'date': self.date,
+            'order_id': self.order_id,
+            'order_number': self.order_number,
+            'item_name': self.item_name,
+            'reason': self.reason,
+            'description': self.description,
+            'filament_wasted_grams': self.filament_wasted_grams,
+            'time_wasted_minutes': self.time_wasted_minutes,
+            'spool_id': self.spool_id,
+            'color': self.color,
+            'filament_cost': self.filament_cost,
+            'electricity_cost': self.electricity_cost,
+            'total_loss': self.total_loss,
+            'printer_id': self.printer_id,
+            'printer_name': self.printer_name,
+            'resolved': self.resolved,
+            'resolution_notes': self.resolution_notes,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'PrintFailure':
+        f = cls()
+        f.id = data.get('id', generate_id())
+        f.date = data.get('date', now_str())
+        f.order_id = data.get('order_id', '')
+        f.order_number = data.get('order_number', 0)
+        f.item_name = data.get('item_name', '')
+        f.reason = data.get('reason', FailureReason.OTHER.value)
+        f.description = data.get('description', '')
+        f.filament_wasted_grams = data.get('filament_wasted_grams', 0.0)
+        f.time_wasted_minutes = data.get('time_wasted_minutes', 0)
+        f.spool_id = data.get('spool_id', '')
+        f.color = data.get('color', '')
+        f.filament_cost = data.get('filament_cost', 0.0)
+        f.electricity_cost = data.get('electricity_cost', 0.0)
+        f.total_loss = data.get('total_loss', 0.0)
+        f.printer_id = data.get('printer_id', '')
+        f.printer_name = data.get('printer_name', '')
+        f.resolved = data.get('resolved', False)
+        f.resolution_notes = data.get('resolution_notes', '')
+        return f
+
+
+@dataclass
+class Expense:
+    """Track business expenses (tools, consumables, etc.)"""
+    id: str = field(default_factory=generate_id)
+    date: str = field(default_factory=now_str)
+    
+    # Expense details
+    category: str = ExpenseCategory.OTHER.value
+    name: str = ""  # What was purchased
+    description: str = ""
+    
+    # Cost
+    amount: float = 0.0
+    quantity: int = 1
+    total_cost: float = 0.0  # amount × quantity
+    
+    # Optional tracking
+    supplier: str = ""
+    receipt_number: str = ""
+    
+    # For recurring expenses
+    is_recurring: bool = False
+    recurring_period: str = ""  # "monthly", "yearly"
+    
+    def calculate_total(self):
+        """Calculate total cost"""
+        self.total_cost = self.amount * self.quantity
+    
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'date': self.date,
+            'category': self.category,
+            'name': self.name,
+            'description': self.description,
+            'amount': self.amount,
+            'quantity': self.quantity,
+            'total_cost': self.total_cost,
+            'supplier': self.supplier,
+            'receipt_number': self.receipt_number,
+            'is_recurring': self.is_recurring,
+            'recurring_period': self.recurring_period,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Expense':
+        e = cls()
+        e.id = data.get('id', generate_id())
+        e.date = data.get('date', now_str())
+        e.category = data.get('category', ExpenseCategory.OTHER.value)
+        e.name = data.get('name', '')
+        e.description = data.get('description', '')
+        e.amount = data.get('amount', 0.0)
+        e.quantity = data.get('quantity', 1)
+        e.total_cost = data.get('total_cost', 0.0)
+        e.supplier = data.get('supplier', '')
+        e.receipt_number = data.get('receipt_number', '')
+        e.is_recurring = data.get('is_recurring', False)
+        e.recurring_period = data.get('recurring_period', '')
+        return e
+
+
+@dataclass
 class Statistics:
-    """Business statistics with rounding loss tracking"""
+    """Business statistics with failures and expenses tracking"""
     # Orders
     total_orders: int = 0
     completed_orders: int = 0
-    rd_orders: int = 0  # NEW
+    rd_orders: int = 0
     
     # Revenue
     total_revenue: float = 0
     total_shipping: float = 0
     total_payment_fees: float = 0
-    total_rounding_loss: float = 0  # NEW
+    total_rounding_loss: float = 0
     
-    # Costs
+    # Production Costs
     total_material_cost: float = 0
     total_electricity_cost: float = 0
     total_depreciation_cost: float = 0
     total_nozzle_cost: float = 0
     
+    # Failures (NEW)
+    total_failures: int = 0
+    total_failure_cost: float = 0  # Cost of failed prints
+    failure_filament_wasted: float = 0  # Grams wasted in failures
+    failure_time_wasted: int = 0  # Minutes wasted in failures
+    
+    # Expenses (NEW)
+    total_expenses: float = 0  # All business expenses
+    expenses_tools: float = 0
+    expenses_consumables: float = 0
+    expenses_maintenance: float = 0
+    expenses_other: float = 0
+    
     # Profit
-    total_profit: float = 0
+    total_profit: float = 0  # After failures and expenses
+    gross_profit: float = 0  # Before failures and expenses
     
     # Production
     total_weight_printed: float = 0
     total_time_printed: int = 0
     total_filament_used: float = 0
-    total_filament_waste: float = 0  # NEW: From trashed spools
+    total_filament_waste: float = 0  # From trashed spools
     
     # Inventory
     active_spools: int = 0
     remaining_filament: float = 0
-    pending_filament: float = 0  # NEW
+    pending_filament: float = 0
     
     # Customers
     total_customers: int = 0
@@ -868,7 +1061,7 @@ class Statistics:
     total_printers: int = 0
     
     # Tolerance
-    total_tolerance_discounts: float = 0  # NEW
+    total_tolerance_discounts: float = 0
     
     @property
     def profit_margin(self) -> float:
@@ -877,6 +1070,19 @@ class Statistics:
         return (self.total_profit / self.total_revenue) * 100
     
     @property
-    def total_costs(self) -> float:
+    def gross_margin(self) -> float:
+        if self.total_revenue <= 0:
+            return 0
+        return (self.gross_profit / self.total_revenue) * 100
+    
+    @property
+    def total_production_costs(self) -> float:
+        """Direct production costs"""
         return (self.total_material_cost + self.total_electricity_cost + 
                 self.total_depreciation_cost + self.total_nozzle_cost)
+    
+    @property
+    def total_costs(self) -> float:
+        """All costs including failures and expenses"""
+        return (self.total_production_costs + self.total_failure_cost + 
+                self.total_expenses)

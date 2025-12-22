@@ -11,6 +11,7 @@ from typing import List, Optional, Dict, Any
 from .models import (
     Order, PrintItem, FilamentSpool, Customer, Statistics, Printer,
     FilamentHistory, OrderStatus, SpoolCategory, SpoolStatus, PaymentMethod,
+    PrintFailure, Expense, FailureReason, ExpenseCategory,
     now_str, DEFAULT_COST_PER_GRAM, SPOOL_PRICE_FIXED, TRASH_THRESHOLD_GRAMS
 )
 
@@ -36,7 +37,9 @@ class DatabaseManager:
             'customers': {},
             'spools': {},
             'printers': {},
-            'filament_history': {},  # NEW: Archive for trashed spools
+            'filament_history': {},  # Archive for trashed spools
+            'failures': {},  # NEW: Print failures tracking
+            'expenses': {},  # NEW: Business expenses tracking
             'deleted_orders': {},
             'colors': ["Black", "Light Blue", "Silver", "White", "Red", "Beige", "Purple"],
             'settings': {
@@ -213,6 +216,102 @@ class DatabaseManager:
     def get_total_waste(self) -> float:
         """Get total waste from all trashed spools"""
         return sum(h.waste_weight for h in self.get_filament_history())
+    
+    # === PRINT FAILURES ===
+    def save_failure(self, failure: PrintFailure) -> bool:
+        """Save a print failure record"""
+        failure.calculate_costs()
+        self.data['failures'][failure.id] = failure.to_dict()
+        
+        # Deduct wasted filament from spool if specified
+        if failure.spool_id and failure.filament_wasted_grams > 0:
+            spool = self.get_spool(failure.spool_id)
+            if spool:
+                spool.use_filament(failure.filament_wasted_grams)
+                self.save_spool(spool)
+        
+        return self._save()
+    
+    def get_failure(self, failure_id: str) -> Optional[PrintFailure]:
+        data = self.data.get('failures', {}).get(failure_id)
+        if data:
+            return PrintFailure.from_dict(data)
+        return None
+    
+    def get_all_failures(self) -> List[PrintFailure]:
+        """Get all print failures, sorted by date (newest first)"""
+        failures = [PrintFailure.from_dict(d) for d in self.data.get('failures', {}).values()]
+        return sorted(failures, key=lambda f: f.date, reverse=True)
+    
+    def get_failures_by_reason(self, reason: str) -> List[PrintFailure]:
+        """Get failures filtered by reason"""
+        return [f for f in self.get_all_failures() if f.reason == reason]
+    
+    def get_failure_stats(self) -> Dict[str, Any]:
+        """Get failure statistics"""
+        failures = self.get_all_failures()
+        stats = {
+            'total_failures': len(failures),
+            'total_cost': sum(f.total_loss for f in failures),
+            'total_filament_wasted': sum(f.filament_wasted_grams for f in failures),
+            'total_time_wasted': sum(f.time_wasted_minutes for f in failures),
+            'by_reason': {},
+        }
+        # Count by reason
+        for reason in FailureReason:
+            count = len([f for f in failures if f.reason == reason.value])
+            if count > 0:
+                stats['by_reason'][reason.value] = count
+        return stats
+    
+    def delete_failure(self, failure_id: str) -> bool:
+        if failure_id in self.data.get('failures', {}):
+            del self.data['failures'][failure_id]
+            return self._save()
+        return False
+    
+    # === EXPENSES ===
+    def save_expense(self, expense: Expense) -> bool:
+        """Save a business expense"""
+        expense.calculate_total()
+        self.data['expenses'][expense.id] = expense.to_dict()
+        return self._save()
+    
+    def get_expense(self, expense_id: str) -> Optional[Expense]:
+        data = self.data.get('expenses', {}).get(expense_id)
+        if data:
+            return Expense.from_dict(data)
+        return None
+    
+    def get_all_expenses(self) -> List[Expense]:
+        """Get all expenses, sorted by date (newest first)"""
+        expenses = [Expense.from_dict(d) for d in self.data.get('expenses', {}).values()]
+        return sorted(expenses, key=lambda e: e.date, reverse=True)
+    
+    def get_expenses_by_category(self, category: str) -> List[Expense]:
+        """Get expenses filtered by category"""
+        return [e for e in self.get_all_expenses() if e.category == category]
+    
+    def get_expense_stats(self) -> Dict[str, Any]:
+        """Get expense statistics"""
+        expenses = self.get_all_expenses()
+        stats = {
+            'total_expenses': sum(e.total_cost for e in expenses),
+            'expense_count': len(expenses),
+            'by_category': {},
+        }
+        # Sum by category
+        for category in ExpenseCategory:
+            total = sum(e.total_cost for e in expenses if e.category == category.value)
+            if total > 0:
+                stats['by_category'][category.value] = total
+        return stats
+    
+    def delete_expense(self, expense_id: str) -> bool:
+        if expense_id in self.data.get('expenses', {}):
+            del self.data['expenses'][expense_id]
+            return self._save()
+        return False
     
     # === PRINTERS ===
     def save_printer(self, printer: Printer) -> bool:
@@ -416,6 +515,7 @@ class DatabaseManager:
     def get_statistics(self) -> Statistics:
         stats = Statistics()
         
+        # Orders
         orders = self.get_all_orders()
         stats.total_orders = len(orders)
         stats.completed_orders = len([o for o in orders if o.status == OrderStatus.DELIVERED.value])
@@ -427,22 +527,46 @@ class DatabaseManager:
         stats.total_material_cost = sum(o.material_cost for o in orders if o.status != OrderStatus.CANCELLED.value)
         stats.total_electricity_cost = sum(o.electricity_cost for o in orders if o.status != OrderStatus.CANCELLED.value)
         stats.total_depreciation_cost = sum(o.depreciation_cost for o in orders if o.status != OrderStatus.CANCELLED.value)
-        stats.total_profit = sum(o.profit for o in orders if o.status != OrderStatus.CANCELLED.value)
         stats.total_weight_printed = sum(o.total_weight for o in orders if o.status in [OrderStatus.DELIVERED.value, OrderStatus.READY.value])
         stats.total_time_printed = sum(o.total_time for o in orders if o.status in [OrderStatus.DELIVERED.value, OrderStatus.READY.value])
         stats.total_tolerance_discounts = sum(o.tolerance_discount_total for o in orders if o.status != OrderStatus.CANCELLED.value)
         
+        # Gross profit from orders (before failures and expenses)
+        stats.gross_profit = sum(o.profit for o in orders if o.status != OrderStatus.CANCELLED.value)
+        
+        # Failures
+        failure_stats = self.get_failure_stats()
+        stats.total_failures = failure_stats['total_failures']
+        stats.total_failure_cost = failure_stats['total_cost']
+        stats.failure_filament_wasted = failure_stats['total_filament_wasted']
+        stats.failure_time_wasted = failure_stats['total_time_wasted']
+        
+        # Expenses
+        expense_stats = self.get_expense_stats()
+        stats.total_expenses = expense_stats['total_expenses']
+        stats.expenses_tools = expense_stats['by_category'].get(ExpenseCategory.TOOLS.value, 0)
+        stats.expenses_consumables = expense_stats['by_category'].get(ExpenseCategory.CONSUMABLES.value, 0)
+        stats.expenses_maintenance = expense_stats['by_category'].get(ExpenseCategory.MAINTENANCE.value, 0)
+        stats.expenses_other = (stats.total_expenses - stats.expenses_tools - 
+                               stats.expenses_consumables - stats.expenses_maintenance)
+        
+        # TRUE PROFIT = Gross Profit - Failures - Expenses
+        stats.total_profit = stats.gross_profit - stats.total_failure_cost - stats.total_expenses
+        
+        # Filament/Inventory
         spools = self.get_all_spools()
         stats.total_filament_used = sum(s.used_weight_grams for s in spools)
         stats.active_spools = len([s for s in spools if s.is_active and s.current_weight_grams > 50])
         stats.remaining_filament = sum(s.current_weight_grams for s in spools if s.is_active)
         stats.pending_filament = sum(s.pending_weight_grams for s in spools)
-        stats.total_filament_waste = self.get_total_waste()
+        stats.total_filament_waste = self.get_total_waste() + stats.failure_filament_wasted
         
+        # Printers
         printers = self.get_all_printers()
         stats.total_printers = len(printers)
         stats.total_nozzle_cost = sum(p.total_nozzle_cost for p in printers)
         
+        # Customers
         stats.total_customers = len(self.data['customers'])
         
         return stats
