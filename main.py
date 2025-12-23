@@ -40,6 +40,18 @@ try:
 except:
     CURA_VISION_AVAILABLE = False
 
+# Check for matplotlib availability for charts
+MATPLOTLIB_AVAILABLE = False
+try:
+    import matplotlib
+    matplotlib.use('TkAgg')
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from matplotlib.figure import Figure
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    pass
+
 
 class App:
     def __init__(self, root, user):
@@ -51,20 +63,36 @@ class App:
         self.root.minsize(1200, 700)
         self.root.configure(bg=Colors.BG)
         
-        # Try to set window icon
+        # Try to set window icon - works on Windows, Linux, and Mac
         try:
+            import sys
+            icon_set = False
+            
             # Try ICO first (Windows)
             ico_path = Path(__file__).parent / "assets" / "Print3D_Manager.ico"
-            if ico_path.exists():
-                self.root.iconbitmap(str(ico_path))
-            else:
-                # Fallback to PNG
+            if ico_path.exists() and sys.platform == 'win32':
+                try:
+                    self.root.iconbitmap(str(ico_path))
+                    icon_set = True
+                except:
+                    pass
+            
+            # Fallback to PNG (works on Linux, Mac, and Windows)
+            if not icon_set:
                 png_path = Path(__file__).parent / "assets" / "Abaad.png"
                 if png_path.exists():
-                    img = tk.PhotoImage(file=str(png_path))
-                    self.root.iconphoto(True, img)
-        except:
-            pass
+                    try:
+                        self.icon_img = tk.PhotoImage(file=str(png_path))
+                        self.root.iconphoto(True, self.icon_img)
+                        icon_set = True
+                    except:
+                        pass
+            
+            # Also set window title icon for Linux window managers
+            if sys.platform != 'win32':
+                self.root.wm_iconname('Abaad ERP')
+        except Exception as e:
+            print(f"Could not set window icon: {e}")
         
         self.db = get_database()
         self.current_order = None
@@ -183,18 +211,25 @@ class App:
         self._build_customers_tab()
         self._build_filament_tab()
         self._build_printers_tab()
-        self._build_failures_tab()  # NEW: Print failures tracking
-        self._build_expenses_tab()  # NEW: Business expenses tracking
+        self._build_failures_tab()  # Print failures tracking
+        self._build_expenses_tab()  # Business expenses tracking
         
         # Admin-only tabs
         if self.auth.has_permission(Permission.VIEW_STATISTICS):
             self._build_stats_tab()
+            if MATPLOTLIB_AVAILABLE:
+                self._build_analytics_tab()  # NEW: Visual analytics with charts
+        
+        self._build_trash_tab()  # NEW: Access to deleted orders
         
         if self.auth.has_permission(Permission.MANAGE_SETTINGS):
             self._build_settings_tab()
         
         if self.auth.has_permission(Permission.MANAGE_USERS):
             self._build_admin_tab()
+        
+        # Fix order numbering on startup if needed
+        self.db.fix_order_numbering()
         
         # === STATUS BAR ===
         self.status_bar = tk.Frame(self.root, bg=Colors.BG_DARK, height=35)
@@ -521,15 +556,37 @@ class App:
             ttk.Button(header, text="+ New Spool (840)", command=self._add_new_spool).pack(side=tk.RIGHT, padx=5)
             ttk.Button(header, text="+ Remaining (FREE)", command=self._add_remaining_spool).pack(side=tk.RIGHT, padx=5)
         
-        self.spool_summary = ttk.Label(tab, text="")
-        self.spool_summary.pack(anchor=tk.W, pady=5)
+        # Enhanced summary with visual indicators
+        summary_frame = ttk.LabelFrame(tab, text="📊 Inventory Overview", padding=8)
+        summary_frame.pack(fill=tk.X, pady=5)
+        
+        self.spool_summary = ttk.Label(summary_frame, text="", font=("Segoe UI", 10))
+        self.spool_summary.pack(anchor=tk.W)
+        
+        # Usage stats
+        self.filament_stats = ttk.Label(summary_frame, text="", font=("Segoe UI", 9), foreground=Colors.TEXT_SECONDARY)
+        self.filament_stats.pack(anchor=tk.W, pady=(5, 0))
+        
+        # Visual usage bar
+        usage_bar_frame = ttk.Frame(summary_frame)
+        usage_bar_frame.pack(fill=tk.X, pady=(5, 0))
+        ttk.Label(usage_bar_frame, text="Overall Usage: ").pack(side=tk.LEFT)
+        self.usage_bar = tk.Canvas(usage_bar_frame, width=300, height=20, bg=Colors.BG, highlightthickness=1, highlightbackground=Colors.BORDER)
+        self.usage_bar.pack(side=tk.LEFT, padx=5)
+        self.usage_label = ttk.Label(usage_bar_frame, text="0%")
+        self.usage_label.pack(side=tk.LEFT)
         
         cols = ("Name", "Color", "Type", "Initial", "Available", "Pending", "Used", "Cost/g", "Status")
-        self.spools_tree = ttk.Treeview(tab, columns=cols, show="headings", height=18)
+        self.spools_tree = ttk.Treeview(tab, columns=cols, show="headings", height=14)
         for col, w in zip(cols, [130, 70, 70, 60, 75, 55, 55, 50, 60]):
             self.spools_tree.heading(col, text=col)
             self.spools_tree.column(col, width=w)
         self.spools_tree.pack(fill=tk.BOTH, expand=True)
+        
+        # Configure row tags for coloring
+        self.spools_tree.tag_configure('low', background='#fef3c7')
+        self.spools_tree.tag_configure('empty', background='#fee2e2')
+        self.spools_tree.tag_configure('trash', background='#e5e7eb')
         
         btn_f = ttk.Frame(tab)
         btn_f.pack(fill=tk.X, pady=5)
@@ -540,6 +597,7 @@ class App:
             ttk.Button(btn_f, text="🗑️ Trash", command=self._move_to_trash).pack(side=tk.LEFT, padx=3)
         
         ttk.Button(btn_f, text="📜 History", command=self._view_filament_history).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_f, text="📊 Color Chart", command=self._show_color_chart).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_f, text="Refresh", command=self._load_spools).pack(side=tk.LEFT, padx=3)
     
     def _build_printers_tab(self):
@@ -680,15 +738,17 @@ class App:
         
         self.stat_lbls = {}
         
-        # Revenue section
-        rev_f = ttk.LabelFrame(tab, text="💵 Revenue & Profit", padding=10)
+        # Revenue section - expanded to show filament cost
+        rev_f = ttk.LabelFrame(tab, text="💵 Revenue & Profit Breakdown", padding=10)
         rev_f.pack(fill=tk.X, pady=5)
+        
+        # First row - main metrics
         rev_cards = ttk.Frame(rev_f)
         rev_cards.pack(fill=tk.X)
         
-        rev_stats = [("Revenue", "revenue", Colors.PRIMARY), ("Gross Profit", "gross_profit", Colors.SUCCESS),
-                    ("Failures", "failures", Colors.DANGER), ("Expenses", "expenses", Colors.WARNING),
-                    ("NET PROFIT", "profit", Colors.SUCCESS)]
+        rev_stats = [("Revenue", "revenue", Colors.PRIMARY), ("- Filament Cost", "filament_cost", Colors.DANGER),
+                    ("= Gross Profit", "gross_profit", Colors.SUCCESS), ("- Failures/Exp", "total_deductions", Colors.WARNING),
+                    ("= NET PROFIT", "profit", Colors.SUCCESS)]
         
         for i, (label, key, color) in enumerate(rev_stats):
             frame = tk.Frame(rev_cards, bg=Colors.CARD, relief=tk.RIDGE, bd=1)
@@ -699,6 +759,12 @@ class App:
             self.stat_lbls[key] = lbl
         for i in range(5):
             rev_cards.columnconfigure(i, weight=1)
+        
+        # Profit margin display
+        margin_f = ttk.Frame(rev_f)
+        margin_f.pack(fill=tk.X, pady=(5, 0))
+        self.stat_lbls['profit_formula'] = ttk.Label(margin_f, text="", font=("Segoe UI", 9), foreground=Colors.TEXT_LIGHT)
+        self.stat_lbls['profit_formula'].pack()
         
         # Orders section
         ord_f = ttk.LabelFrame(tab, text="📦 Orders & Production", padding=10)
@@ -749,6 +815,356 @@ class App:
         
         if self.auth.has_permission(Permission.EXPORT_DATA):
             ttk.Button(btn_f, text="📤 Export CSV", command=self._export_csv).pack(side=tk.LEFT, padx=5)
+    
+    def _build_analytics_tab(self):
+        """Analytics tab with visual charts - Admin only"""
+        tab = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(tab, text="📈 Analytics")
+        
+        # Header
+        header = ttk.Frame(tab)
+        header.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(header, text="📈 Business Analytics", style="Title.TLabel").pack(side=tk.LEFT)
+        
+        refresh_btn = tk.Button(header, text="🔄 Refresh Charts", font=("Segoe UI", 10),
+                               bg=Colors.PRIMARY, fg="white", relief=tk.FLAT, padx=15, pady=5,
+                               cursor="hand2", command=self._refresh_charts)
+        refresh_btn.pack(side=tk.RIGHT)
+        
+        # Create a scrollable frame for charts
+        canvas_frame = ttk.Frame(tab)
+        canvas_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Store chart area for updates
+        self.charts_frame = canvas_frame
+        
+        # Initial chart load
+        self._load_charts()
+    
+    def _load_charts(self):
+        """Load all analytics charts"""
+        if not MATPLOTLIB_AVAILABLE:
+            ttk.Label(self.charts_frame, text="📊 Install matplotlib for charts: pip install matplotlib").pack()
+            return
+        
+        # Clear existing charts
+        for widget in self.charts_frame.winfo_children():
+            widget.destroy()
+        
+        # Get data
+        monthly_stats = self.db.get_monthly_stats()
+        color_stats = self.db.get_color_usage_stats()
+        profit_breakdown = self.db.get_profit_breakdown()
+        
+        # Create figure with subplots
+        fig = Figure(figsize=(14, 10), dpi=100, facecolor='#f8fafc')
+        
+        # Chart 1: Monthly Revenue & Profit (top left)
+        ax1 = fig.add_subplot(2, 2, 1)
+        if monthly_stats['months']:
+            months = [m[-5:] for m in monthly_stats['months']]  # Show MM-YY
+            x = range(len(months))
+            width = 0.35
+            
+            bars1 = ax1.bar([i - width/2 for i in x], monthly_stats['revenue'], width, 
+                           label='Revenue', color='#3b82f6', alpha=0.8)
+            bars2 = ax1.bar([i + width/2 for i in x], monthly_stats['profit'], width,
+                           label='Profit', color='#22c55e', alpha=0.8)
+            
+            ax1.set_xlabel('Month')
+            ax1.set_ylabel('EGP')
+            ax1.set_title('📊 Monthly Revenue vs Profit', fontweight='bold', fontsize=11)
+            ax1.set_xticks(x)
+            ax1.set_xticklabels(months, rotation=45)
+            ax1.legend()
+            ax1.grid(axis='y', alpha=0.3)
+            
+            # Add value labels
+            for bar in bars1:
+                height = bar.get_height()
+                ax1.annotate(f'{int(height)}',
+                            xy=(bar.get_x() + bar.get_width()/2, height),
+                            ha='center', va='bottom', fontsize=8)
+        else:
+            ax1.text(0.5, 0.5, 'No data yet', ha='center', va='center', fontsize=12)
+            ax1.set_title('📊 Monthly Revenue vs Profit', fontweight='bold')
+        
+        # Chart 2: Profit Breakdown (top right)
+        ax2 = fig.add_subplot(2, 2, 2)
+        costs = [
+            ('Filament', profit_breakdown['filament_cost'], '#ef4444'),
+            ('Electricity', profit_breakdown['electricity_cost'], '#f59e0b'),
+            ('Depreciation', profit_breakdown['depreciation_cost'], '#8b5cf6'),
+            ('Fees & Loss', profit_breakdown['payment_fees'] + profit_breakdown['rounding_loss'], '#6b7280'),
+            ('Failures', profit_breakdown['failures_cost'], '#dc2626'),
+            ('Expenses', profit_breakdown['expenses'], '#f97316'),
+        ]
+        
+        labels = [c[0] for c in costs if c[1] > 0]
+        values = [c[1] for c in costs if c[1] > 0]
+        colors_pie = [c[2] for c in costs if c[1] > 0]
+        
+        if values:
+            wedges, texts, autotexts = ax2.pie(values, labels=labels, autopct='%1.1f%%',
+                                               colors=colors_pie, startangle=90)
+            ax2.set_title('💸 Cost Breakdown', fontweight='bold', fontsize=11)
+        else:
+            ax2.text(0.5, 0.5, 'No costs yet', ha='center', va='center', fontsize=12)
+            ax2.set_title('💸 Cost Breakdown', fontweight='bold')
+        
+        # Chart 3: Filament Usage by Color (bottom left)
+        ax3 = fig.add_subplot(2, 2, 3)
+        if color_stats:
+            color_names = list(color_stats.keys())
+            usage = list(color_stats.values())
+            
+            # Color mapping
+            color_map = {
+                'Black': '#1f2937', 'White': '#e5e7eb', 'Red': '#ef4444',
+                'Blue': '#3b82f6', 'Light Blue': '#60a5fa', 'Green': '#22c55e',
+                'Yellow': '#eab308', 'Orange': '#f97316', 'Purple': '#a855f7',
+                'Silver': '#9ca3af', 'Beige': '#d4a574', 'Pink': '#ec4899'
+            }
+            bar_colors = [color_map.get(c, '#6b7280') for c in color_names]
+            
+            bars = ax3.barh(color_names, usage, color=bar_colors, edgecolor='white')
+            ax3.set_xlabel('Grams Used')
+            ax3.set_title('🎨 Filament Usage by Color', fontweight='bold', fontsize=11)
+            ax3.grid(axis='x', alpha=0.3)
+            
+            # Add value labels
+            for bar, val in zip(bars, usage):
+                ax3.text(val + max(usage)*0.02, bar.get_y() + bar.get_height()/2,
+                        f'{int(val)}g', va='center', fontsize=9)
+        else:
+            ax3.text(0.5, 0.5, 'No filament data', ha='center', va='center', fontsize=12)
+            ax3.set_title('🎨 Filament Usage by Color', fontweight='bold')
+        
+        # Chart 4: Orders & Weight Trend (bottom right)
+        ax4 = fig.add_subplot(2, 2, 4)
+        if monthly_stats['months']:
+            months = [m[-5:] for m in monthly_stats['months']]
+            x = range(len(months))
+            
+            # Primary axis - Orders
+            ax4.bar(x, monthly_stats['orders'], color='#6366f1', alpha=0.7, label='Orders')
+            ax4.set_xlabel('Month')
+            ax4.set_ylabel('Orders', color='#6366f1')
+            ax4.tick_params(axis='y', labelcolor='#6366f1')
+            ax4.set_xticks(x)
+            ax4.set_xticklabels(months, rotation=45)
+            
+            # Secondary axis - Filament
+            ax4b = ax4.twinx()
+            ax4b.plot(x, monthly_stats['filament'], 'o-', color='#f59e0b', linewidth=2, 
+                     markersize=6, label='Filament (g)')
+            ax4b.set_ylabel('Filament (g)', color='#f59e0b')
+            ax4b.tick_params(axis='y', labelcolor='#f59e0b')
+            
+            ax4.set_title('📦 Orders & Filament Trend', fontweight='bold', fontsize=11)
+            ax4.legend(loc='upper left')
+            ax4b.legend(loc='upper right')
+        else:
+            ax4.text(0.5, 0.5, 'No trend data', ha='center', va='center', fontsize=12)
+            ax4.set_title('📦 Orders & Filament Trend', fontweight='bold')
+        
+        # Adjust layout
+        fig.tight_layout(pad=3.0)
+        
+        # Embed in tkinter
+        canvas = FigureCanvasTkAgg(fig, master=self.charts_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Summary stats below charts
+        summary_frame = ttk.Frame(self.charts_frame)
+        summary_frame.pack(fill=tk.X, pady=10)
+        
+        summary_text = (
+            f"💰 Total Revenue: {profit_breakdown['revenue']:,.0f} EGP  |  "
+            f"📈 Gross Profit: {profit_breakdown['gross_profit']:,.0f} EGP  |  "
+            f"✨ Net Profit: {profit_breakdown['net_profit']:,.0f} EGP  |  "
+            f"📊 Margin: {profit_breakdown['profit_margin']:.1f}%"
+        )
+        
+        ttk.Label(summary_frame, text=summary_text, font=("Segoe UI", 11, "bold"),
+                 foreground=Colors.PRIMARY).pack()
+    
+    def _refresh_charts(self):
+        """Refresh analytics charts"""
+        if MATPLOTLIB_AVAILABLE:
+            self._load_charts()
+            messagebox.showinfo("Refreshed", "Charts updated with latest data!")
+    
+    def _build_trash_tab(self):
+        """Trash/Deleted Orders tab - Access deleted orders"""
+        tab = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(tab, text="🗑️ Trash")
+        
+        # Header
+        header = ttk.Frame(tab)
+        header.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(header, text="🗑️ Deleted Orders", style="Title.TLabel").pack(side=tk.LEFT)
+        
+        empty_btn = tk.Button(header, text="🧹 Empty Trash", font=("Segoe UI", 10),
+                             bg=Colors.DANGER, fg="white", relief=tk.FLAT, padx=15, pady=5,
+                             cursor="hand2", command=self._empty_trash)
+        empty_btn.pack(side=tk.RIGHT)
+        
+        refresh_btn = tk.Button(header, text="🔄 Refresh", font=("Segoe UI", 10),
+                               bg=Colors.INFO, fg="white", relief=tk.FLAT, padx=15, pady=5,
+                               cursor="hand2", command=self._load_trash)
+        refresh_btn.pack(side=tk.RIGHT, padx=5)
+        
+        # Info label
+        self.trash_info = ttk.Label(tab, text="", style="Subtitle.TLabel")
+        self.trash_info.pack(anchor=tk.W, pady=5)
+        
+        # Deleted orders list
+        cols = ("Order#", "Customer", "Items", "Total", "Status", "Deleted Date")
+        self.trash_tree = ttk.Treeview(tab, columns=cols, show="headings", height=15)
+        for col, w in zip(cols, [70, 150, 50, 80, 90, 130]):
+            self.trash_tree.heading(col, text=col)
+            self.trash_tree.column(col, width=w, anchor=tk.CENTER if col != "Customer" else tk.W)
+        
+        scroll = ttk.Scrollbar(tab, command=self.trash_tree.yview)
+        self.trash_tree.configure(yscrollcommand=scroll.set)
+        self.trash_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Action buttons
+        btn_frame = ttk.Frame(tab)
+        btn_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(btn_frame, text="♻️ Restore Selected", command=self._restore_order).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="🗑️ Permanently Delete", command=self._permanent_delete_order).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="👁️ View Details", command=self._view_deleted_order).pack(side=tk.LEFT, padx=5)
+        
+        # Load trash on creation
+        self._load_trash()
+    
+    def _load_trash(self):
+        """Load deleted orders into trash tab"""
+        if not hasattr(self, 'trash_tree'):
+            return
+        
+        for item in self.trash_tree.get_children():
+            self.trash_tree.delete(item)
+        
+        deleted_orders = self.db.get_deleted_orders()
+        
+        for order in deleted_orders:
+            self.trash_tree.insert("", tk.END, iid=order.id, values=(
+                order.order_number,
+                order.customer_name or "Walk-in",
+                order.item_count,
+                f"{order.total:.0f}",
+                order.status,
+                order.deleted_date.split()[0] if order.deleted_date else "Unknown"
+            ))
+        
+        self.trash_info.config(text=f"📋 {len(deleted_orders)} deleted orders in trash")
+    
+    def _restore_order(self):
+        """Restore selected order from trash"""
+        sel = self.trash_tree.selection()
+        if not sel:
+            messagebox.showwarning("Select", "Select an order to restore")
+            return
+        
+        if messagebox.askyesno("Restore", "Restore this order?\n\nIt will appear back in the Orders list."):
+            if self.db.restore_order(sel[0]):
+                self._load_trash()
+                self._load_orders()
+                messagebox.showinfo("Restored", "Order restored successfully!")
+            else:
+                messagebox.showerror("Error", "Failed to restore order")
+    
+    def _permanent_delete_order(self):
+        """Permanently delete order from trash"""
+        sel = self.trash_tree.selection()
+        if not sel:
+            messagebox.showwarning("Select", "Select an order to delete")
+            return
+        
+        if messagebox.askyesno("⚠️ Permanent Delete", 
+                              "This will PERMANENTLY delete the order!\n\n"
+                              "This action cannot be undone.\n\nContinue?"):
+            if self.db.permanently_delete_order(sel[0]):
+                self._load_trash()
+                messagebox.showinfo("Deleted", "Order permanently deleted")
+            else:
+                messagebox.showerror("Error", "Failed to delete order")
+    
+    def _view_deleted_order(self):
+        """View details of deleted order"""
+        sel = self.trash_tree.selection()
+        if not sel:
+            messagebox.showwarning("Select", "Select an order to view")
+            return
+        
+        # Find order in deleted orders
+        deleted_orders = self.db.get_deleted_orders()
+        order = None
+        for o in deleted_orders:
+            if o.id == sel[0]:
+                order = o
+                break
+        
+        if not order:
+            messagebox.showerror("Error", "Order not found")
+            return
+        
+        # Show details dialog
+        dlg = tk.Toplevel(self.root)
+        dlg.title(f"Deleted Order #{order.order_number}")
+        dlg.geometry("500x400")
+        dlg.transient(self.root)
+        
+        main = ttk.Frame(dlg, padding=15)
+        main.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(main, text=f"📦 Order #{order.order_number}", 
+                 font=("Segoe UI", 14, "bold")).pack(anchor=tk.W)
+        
+        info_text = f"""
+Customer: {order.customer_name or 'Walk-in'}
+Phone: {order.customer_phone or '-'}
+Status: {order.status}
+Created: {order.created_date}
+Deleted: {order.deleted_date}
+
+Items: {order.item_count}
+Total Weight: {order.total_weight:.0f}g
+Total: {order.total:.2f} EGP
+Profit: {order.profit:.2f} EGP
+
+Notes: {order.notes or 'None'}
+        """
+        
+        text = tk.Text(main, height=15, font=("Segoe UI", 10))
+        text.pack(fill=tk.BOTH, expand=True, pady=10)
+        text.insert("1.0", info_text)
+        text.config(state=tk.DISABLED)
+        
+        ttk.Button(main, text="Close", command=dlg.destroy).pack(pady=5)
+    
+    def _empty_trash(self):
+        """Empty all items from trash"""
+        deleted_orders = self.db.get_deleted_orders()
+        if not deleted_orders:
+            messagebox.showinfo("Empty", "Trash is already empty!")
+            return
+        
+        if messagebox.askyesno("⚠️ Empty Trash", 
+                              f"This will PERMANENTLY delete {len(deleted_orders)} orders!\n\n"
+                              "This action cannot be undone.\n\nContinue?"):
+            for order in deleted_orders:
+                self.db.permanently_delete_order(order.id)
+            self._load_trash()
+            messagebox.showinfo("Done", "Trash emptied successfully!")
     
     def _build_settings_tab(self):
         """Settings tab - Admin only"""
@@ -802,6 +1218,10 @@ class App:
         self._load_expenses()
         if hasattr(self, 'stat_lbls'):
             self._load_stats()
+        if hasattr(self, 'trash_tree'):
+            self._load_trash()
+        if MATPLOTLIB_AVAILABLE and hasattr(self, 'charts_frame'):
+            self._load_charts()
     
     def _load_orders(self):
         for i in self.orders_tree.get_children():
@@ -852,28 +1272,77 @@ class App:
         for i in self.spools_tree.get_children():
             self.spools_tree.delete(i)
         spools = self.db.get_all_spools()
+        
+        # Calculate totals
+        total_initial = sum(s.initial_weight_grams for s in spools)
         total_r = sum(s.current_weight_grams for s in spools if s.is_active)
         total_p = sum(s.pending_weight_grams for s in spools)
         total_u = sum(s.used_weight_grams for s in spools)
         active = len([s for s in spools if s.is_active and s.current_weight_grams > 50])
+        low_count = len([s for s in spools if s.should_show_trash_button])
+        
+        # Calculate filament value
+        total_value = sum(s.purchase_price_egp for s in spools if s.is_active and s.category != SpoolCategory.REMAINING.value)
+        used_value = (total_u / total_initial * total_value) if total_initial > 0 else 0
         
         for s in spools:
             if s.status == SpoolStatus.TRASH.value:
                 status = "🗑️ Trash"
+                tag = 'trash'
             elif s.current_weight_grams <= 0:
                 status = "Empty"
+                tag = 'empty'
             elif s.should_show_trash_button:
                 status = "⚠️ Low"
+                tag = 'low'
             else:
                 status = "Active"
+                tag = ''
             category = "Remaining" if s.category == SpoolCategory.REMAINING.value else "Standard"
             cost_per_g = f"{s.cost_per_gram:.2f}" if s.cost_per_gram > 0 else "FREE"
             self.spools_tree.insert("", tk.END, iid=s.id, values=(
                 s.display_name, s.color, category, f"{s.initial_weight_grams:.0f}g",
                 f"{s.available_weight_grams:.0f}g ({s.remaining_percent:.0f}%)",
                 f"{s.pending_weight_grams:.0f}g", f"{s.used_weight_grams:.0f}g", cost_per_g, status
-            ))
-        self.spool_summary.config(text=f"{len(spools)} spools | {active} active | {total_r:.0f}g remaining | {total_p:.0f}g pending | {total_u:.0f}g used")
+            ), tags=(tag,))
+        
+        # Update summary
+        self.spool_summary.config(
+            text=f"📦 {len(spools)} spools | ✅ {active} active | ⚠️ {low_count} low | "
+                 f"🎨 {total_r:.0f}g remaining | 📌 {total_p:.0f}g pending"
+        )
+        
+        # Update stats
+        if hasattr(self, 'filament_stats'):
+            self.filament_stats.config(
+                text=f"💰 Inventory Value: ~{total_value:,.0f} EGP | "
+                     f"📊 Total Used: {total_u:,.0f}g (~{used_value:,.0f} EGP worth)"
+            )
+        
+        # Update visual usage bar
+        if hasattr(self, 'usage_bar'):
+            self.usage_bar.delete("all")
+            usage_percent = (total_u / total_initial * 100) if total_initial > 0 else 0
+            
+            # Draw background
+            self.usage_bar.create_rectangle(0, 0, 300, 20, fill='#e5e7eb', outline='')
+            
+            # Draw usage bar (green for used, blue for remaining, orange for pending)
+            remaining_width = int(300 * (total_r / total_initial)) if total_initial > 0 else 0
+            pending_width = int(300 * (total_p / total_initial)) if total_initial > 0 else 0
+            used_width = 300 - remaining_width - pending_width
+            
+            # Used (blue)
+            if used_width > 0:
+                self.usage_bar.create_rectangle(0, 0, used_width, 20, fill='#3b82f6', outline='')
+            # Pending (orange)
+            if pending_width > 0:
+                self.usage_bar.create_rectangle(used_width, 0, used_width + pending_width, 20, fill='#f59e0b', outline='')
+            # Remaining (green)
+            if remaining_width > 0:
+                self.usage_bar.create_rectangle(used_width + pending_width, 0, 300, 20, fill='#22c55e', outline='')
+            
+            self.usage_label.config(text=f"{usage_percent:.1f}% used")
     
     def _load_printers(self):
         for i in self.printers_tree.get_children():
@@ -887,12 +1356,24 @@ class App:
     
     def _load_stats(self):
         s = self.db.get_statistics()
-        # Revenue & Profit
+        breakdown = self.db.get_profit_breakdown()
+        
+        # Revenue & Profit with filament cost breakdown
         self.stat_lbls['revenue'].config(text=f"{s.total_revenue:.0f}")
+        self.stat_lbls['filament_cost'].config(text=f"{s.total_material_cost:.0f}")
         self.stat_lbls['gross_profit'].config(text=f"{s.gross_profit:.0f}")
-        self.stat_lbls['failures'].config(text=f"-{s.total_failure_cost:.0f}")
-        self.stat_lbls['expenses'].config(text=f"-{s.total_expenses:.0f}")
+        total_deductions = s.total_failure_cost + s.total_expenses
+        self.stat_lbls['total_deductions'].config(text=f"{total_deductions:.0f}")
         self.stat_lbls['profit'].config(text=f"{s.total_profit:.0f}")
+        
+        # Profit formula explanation
+        if 'profit_formula' in self.stat_lbls:
+            formula = (f"Revenue ({s.total_revenue:.0f}) - Material ({s.total_material_cost:.0f}) - "
+                      f"Electricity ({s.total_electricity_cost:.1f}) - Depreciation ({s.total_depreciation_cost:.0f}) "
+                      f"= Gross ({s.gross_profit:.0f}) - Failures ({s.total_failure_cost:.0f}) - "
+                      f"Expenses ({s.total_expenses:.0f}) = Net Profit ({s.total_profit:.0f})")
+            self.stat_lbls['profit_formula'].config(text=formula)
+        
         # Orders
         self.stat_lbls['orders'].config(text=str(s.total_orders))
         self.stat_lbls['completed'].config(text=str(s.completed_orders))
@@ -1365,6 +1846,72 @@ class App:
                 self._load_stats()
             messagebox.showinfo("Trashed", f"Spool moved to trash history.")
 
+    def _show_color_chart(self):
+        """Show filament usage by color chart"""
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Filament Usage by Color")
+        dlg.geometry("600x500")
+        dlg.transient(self.root)
+        
+        if MATPLOTLIB_AVAILABLE:
+            color_stats = self.db.get_color_usage_stats()
+            
+            if not color_stats:
+                ttk.Label(dlg, text="No filament usage data yet", font=("Segoe UI", 14)).pack(expand=True)
+                return
+            
+            fig = Figure(figsize=(6, 5), dpi=100, facecolor='#f8fafc')
+            ax = fig.add_subplot(111)
+            
+            color_names = list(color_stats.keys())
+            usage = list(color_stats.values())
+            
+            # Color mapping
+            color_map = {
+                'Black': '#1f2937', 'White': '#9ca3af', 'Red': '#ef4444',
+                'Blue': '#3b82f6', 'Light Blue': '#60a5fa', 'Green': '#22c55e',
+                'Yellow': '#eab308', 'Orange': '#f97316', 'Purple': '#a855f7',
+                'Silver': '#6b7280', 'Beige': '#d4a574', 'Pink': '#ec4899'
+            }
+            bar_colors = [color_map.get(c, '#6b7280') for c in color_names]
+            
+            # Create pie chart
+            wedges, texts, autotexts = ax.pie(
+                usage, labels=color_names, autopct='%1.1f%%',
+                colors=bar_colors, startangle=90,
+                explode=[0.02] * len(usage)
+            )
+            
+            ax.set_title('🎨 Filament Usage by Color', fontweight='bold', fontsize=12)
+            
+            # Add legend with grams
+            legend_labels = [f"{c}: {u:.0f}g" for c, u in zip(color_names, usage)]
+            ax.legend(wedges, legend_labels, title="Colors", loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
+            
+            fig.tight_layout()
+            
+            canvas = FigureCanvasTkAgg(fig, master=dlg)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        else:
+            # Fallback to text display
+            main = ttk.Frame(dlg, padding=15)
+            main.pack(fill=tk.BOTH, expand=True)
+            
+            ttk.Label(main, text="🎨 Filament Usage by Color", font=("Segoe UI", 14, "bold")).pack(anchor=tk.W)
+            
+            color_stats = self.db.get_color_usage_stats()
+            total = sum(color_stats.values())
+            
+            for color, usage in sorted(color_stats.items(), key=lambda x: -x[1]):
+                percent = (usage / total * 100) if total > 0 else 0
+                frame = ttk.Frame(main)
+                frame.pack(fill=tk.X, pady=2)
+                ttk.Label(frame, text=f"{color}:", width=15).pack(side=tk.LEFT)
+                ttk.Label(frame, text=f"{usage:.0f}g ({percent:.1f}%)").pack(side=tk.LEFT)
+        
+        ttk.Button(dlg, text="Close", command=dlg.destroy).pack(pady=10)
+    
     def _view_filament_history(self):
         dlg = tk.Toplevel(self.root)
         dlg.title("Filament Waste History")

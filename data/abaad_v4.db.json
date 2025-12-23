@@ -2,7 +2,7 @@
   "orders": {
     "2ac420d3": {
       "id": "2ac420d3",
-      "order_number": 2,
+      "order_number": 1,
       "customer_id": "54e18b2a",
       "customer_name": "Eng/Ahmed Al_Muzain",
       "customer_phone": "+20 10 29301065",
@@ -122,7 +122,7 @@
     },
     "0870fc9e": {
       "id": "0870fc9e",
-      "order_number": 3,
+      "order_number": 2,
       "customer_id": "54e18b2a",
       "customer_name": "Eng/Ahmed Al_Muzain",
       "customer_phone": "+20 10 29301065",
@@ -296,7 +296,7 @@
     },
     "c90736d4": {
       "id": "c90736d4",
-      "order_number": 4,
+      "order_number": 3,
       "customer_id": "54e18b2a",
       "customer_name": "Eng/Ahmed Al_Muzain",
       "customer_phone": "+20 10 29301065",
@@ -497,7 +497,7 @@
     },
     "39d96233": {
       "id": "39d96233",
-      "order_number": 5,
+      "order_number": 4,
       "customer_id": "54e18b2a",
       "customer_name": "Eng/Ahmed Al_Muzain",
       "customer_phone": "+20 10 29301065",
@@ -698,7 +698,7 @@
     },
     "92281254": {
       "id": "92281254",
-      "order_number": 6,
+      "order_number": 5,
       "customer_id": "54e18b2a",
       "customer_name": "Eng/Ahmed Al_Muzain",
       "customer_phone": "+20 10 29301065",
@@ -899,7 +899,7 @@
     },
     "49ff9838": {
       "id": "49ff9838",
-      "order_number": 7,
+      "order_number": 6,
       "customer_id": "e2da97db",
       "customer_name": "Eng/Ali Nasr",
       "customer_phone": "+20 10 07893397",
@@ -1181,7 +1181,7 @@
     },
     "465ee329": {
       "id": "465ee329",
-      "order_number": 8,
+      "order_number": 7,
       "customer_id": "1b105b82",
       "customer_name": "Eng/Saad Abdelbaset",
       "customer_phone": "+20 10 12043413",
@@ -1409,7 +1409,7 @@
     },
     "134d66e8": {
       "id": "134d66e8",
-      "order_number": 9,
+      "order_number": 8,
       "customer_id": "fbe5b660",
       "customer_name": "Eng/Mohammad Atef",
       "customer_phone": "+20 10 21777149",
@@ -1610,7 +1610,7 @@
     },
     "9ec3079e": {
       "id": "9ec3079e",
-      "order_number": 10,
+      "order_number": 9,
       "customer_id": "75eff30f",
       "customer_name": "Eng/Eslam Mohammed",
       "customer_phone": "+20 12 84843383",
@@ -2044,7 +2044,7 @@
     "company_phone": "01070750477",
     "company_address": "Ismailia, Egypt",
     "default_rate_per_gram": 4.0,
-    "next_order_number": 11,
+    "next_order_number": 10,
     "deposit_percent": 50,
     "quote_validity_days": 7
   }

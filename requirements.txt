@@ -10,3 +10,6 @@ Pillow>=10.0.0
 # OCR for extracting data from Cura screenshots (optional)
 # Requires Tesseract installed on system
 pytesseract>=0.3.10
+
+# Data visualization for analytics dashboard
+matplotlib>=3.7.0

@@ -449,10 +449,148 @@ class DatabaseManager:
             if soft:
                 self.data['orders'][order_id]['is_deleted'] = True
                 self.data['orders'][order_id]['deleted_date'] = now_str()
+                # Also store in deleted_orders for easy access
+                self.data['deleted_orders'][order_id] = self.data['orders'][order_id].copy()
             else:
                 del self.data['orders'][order_id]
             return self._save()
         return False
+    
+    def get_deleted_orders(self) -> List[Order]:
+        """Get all soft-deleted orders"""
+        deleted = []
+        for data in self.data['orders'].values():
+            if data.get('is_deleted', False):
+                deleted.append(Order.from_dict(data))
+        # Also check deleted_orders dict
+        for data in self.data.get('deleted_orders', {}).values():
+            order = Order.from_dict(data)
+            if order.id not in [o.id for o in deleted]:
+                deleted.append(order)
+        return sorted(deleted, key=lambda o: o.deleted_date or o.created_date, reverse=True)
+    
+    def restore_order(self, order_id: str) -> bool:
+        """Restore a deleted order"""
+        if order_id in self.data['orders']:
+            self.data['orders'][order_id]['is_deleted'] = False
+            self.data['orders'][order_id]['deleted_date'] = ''
+            # Remove from deleted_orders if exists
+            if order_id in self.data.get('deleted_orders', {}):
+                del self.data['deleted_orders'][order_id]
+            return self._save()
+        # Check deleted_orders dict
+        if order_id in self.data.get('deleted_orders', {}):
+            order_data = self.data['deleted_orders'][order_id]
+            order_data['is_deleted'] = False
+            order_data['deleted_date'] = ''
+            self.data['orders'][order_id] = order_data
+            del self.data['deleted_orders'][order_id]
+            return self._save()
+        return False
+    
+    def permanently_delete_order(self, order_id: str) -> bool:
+        """Permanently delete an order"""
+        deleted = False
+        if order_id in self.data['orders']:
+            del self.data['orders'][order_id]
+            deleted = True
+        if order_id in self.data.get('deleted_orders', {}):
+            del self.data['deleted_orders'][order_id]
+            deleted = True
+        if deleted:
+            return self._save()
+        return False
+    
+    def fix_order_numbering(self) -> bool:
+        """Fix order numbering to start from 1 if there's no order #1"""
+        orders = self.get_all_orders()
+        order_numbers = [o.order_number for o in orders]
+        
+        if 1 not in order_numbers and order_numbers:
+            # Find the minimum order number
+            min_num = min(order_numbers)
+            if min_num > 1:
+                # Shift all order numbers down
+                diff = min_num - 1
+                for order_id, order_data in self.data['orders'].items():
+                    if not order_data.get('is_deleted', False):
+                        order_data['order_number'] = order_data['order_number'] - diff
+                # Update next_order_number
+                self.data['settings']['next_order_number'] = max(order_numbers) - diff + 1
+                return self._save()
+        return False
+    
+    def get_monthly_stats(self) -> Dict[str, Any]:
+        """Get monthly statistics for charts"""
+        from collections import defaultdict
+        from datetime import datetime
+        
+        monthly_revenue = defaultdict(float)
+        monthly_profit = defaultdict(float)
+        monthly_orders = defaultdict(int)
+        monthly_filament = defaultdict(float)
+        
+        for data in self.data['orders'].values():
+            if data.get('is_deleted', False):
+                continue
+            order = Order.from_dict(data)
+            if order.status == OrderStatus.CANCELLED.value:
+                continue
+            
+            # Extract month-year from date
+            try:
+                date = datetime.strptime(order.created_date.split()[0], '%Y-%m-%d')
+                month_key = date.strftime('%Y-%m')
+                
+                monthly_revenue[month_key] += order.total
+                monthly_profit[month_key] += order.profit
+                monthly_orders[month_key] += 1
+                monthly_filament[month_key] += order.total_weight
+            except:
+                pass
+        
+        # Sort by date
+        sorted_months = sorted(monthly_revenue.keys())
+        
+        return {
+            'months': sorted_months,
+            'revenue': [monthly_revenue[m] for m in sorted_months],
+            'profit': [monthly_profit[m] for m in sorted_months],
+            'orders': [monthly_orders[m] for m in sorted_months],
+            'filament': [monthly_filament[m] for m in sorted_months],
+        }
+    
+    def get_color_usage_stats(self) -> Dict[str, float]:
+        """Get filament usage by color"""
+        color_usage = {}
+        for spool in self.get_all_spools():
+            color = spool.color
+            if color not in color_usage:
+                color_usage[color] = 0
+            color_usage[color] += spool.used_weight_grams
+        return color_usage
+    
+    def get_profit_breakdown(self) -> Dict[str, Any]:
+        """Get detailed profit breakdown"""
+        stats = self.get_statistics()
+        
+        # Calculate filament cost from orders
+        filament_cost = stats.total_material_cost
+        
+        return {
+            'revenue': stats.total_revenue,
+            'filament_cost': filament_cost,
+            'electricity_cost': stats.total_electricity_cost,
+            'depreciation_cost': stats.total_depreciation_cost,
+            'payment_fees': stats.total_payment_fees,
+            'rounding_loss': stats.total_rounding_loss,
+            'failures_cost': stats.total_failure_cost,
+            'expenses': stats.total_expenses,
+            'tolerance_discounts': stats.total_tolerance_discounts,
+            'gross_profit': stats.gross_profit,
+            'net_profit': stats.total_profit,
+            'profit_margin': stats.profit_margin,
+        }
     
     # === CUSTOMERS ===
     def save_customer(self, customer: Customer) -> bool:
