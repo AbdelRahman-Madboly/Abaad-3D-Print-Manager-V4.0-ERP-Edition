@@ -1265,7 +1265,7 @@ class App:
         nozzle_c.grid(row=5, column=1, sticky=tk.W, pady=3, padx=5)
         
         ttk.Label(main, text="Layer:").grid(row=6, column=0, sticky=tk.W, pady=3)
-        layer_c = ttk.Combobox(main, values=["0.1", "0.15", "0.2", "0.25", "0.3"], width=8)
+        layer_c = ttk.Combobox(main, values=["0.08", "0.12", "0.16", "0.2", "0.28", "0.32"], width=8)
         layer_c.set(str(item.settings.layer_height))
         layer_c.grid(row=6, column=1, sticky=tk.W, pady=3, padx=5)
         

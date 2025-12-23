@@ -13,6 +13,20 @@
       "last_login": "",
       "login_count": 0,
       "notes": "Default admin account"
+    },
+    {
+      "id": "user_default",
+      "username": "user",
+      "password_hash": "5a87698c1baf0cd8ea0ab4efd1c10a65d20d93139a67f61136fd59d565eb2656",
+      "password_salt": "d6cb39d8e1c527122421a92f316781fb",
+      "role": "User",
+      "display_name": "Staff User",
+      "email": "",
+      "is_active": true,
+      "created_date": "2025-12-21 08:07:07",
+      "last_login": "",
+      "login_count": 0,
+      "notes": ""
     }
   ]
 }
