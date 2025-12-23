@@ -137,53 +137,67 @@ class PDFGenerator:
         
         total_weight = 0
         total_time = 0
+        total_items = 0
         
         for i, item in enumerate(order.items, 1):
-            # Rich item description
-            desc_text = f"<b>{item.name}</b>\n"
-            desc_text += f"<font size='8' color='{self.colors['text_light']}'>"
-            desc_text += f"🎨 {item.color} | ⚙️ {item.settings}"
+            # Rich item description with more details
+            desc_text = f"<b>{item.name}</b><br/>"
+            desc_text += f"<font size='7' color='{self.colors['text_light']}'>"
+            desc_text += f"🎨 {item.color}"
+            # Add filament type if available
+            if hasattr(item, 'filament_type') and item.filament_type:
+                desc_text += f" ({item.filament_type})"
+            desc_text += f"<br/>"
+            desc_text += f"⚙️ {item.settings}"
             if item.tolerance_discount_applied:
-                desc_text += f"\n<font color='{self.colors['success']}'>✓ Tolerance Discount: -{item.tolerance_discount_amount:.2f}</font>"
+                desc_text += f"<br/><font color='{self.colors['success']}'>✓ Tolerance: -{item.tolerance_discount_amount:.2f}</font>"
             desc_text += "</font>"
             
+            # Enhanced weight display
             weight_text = f"{item.weight:.0f}g"
             if show_actual and item.actual_weight_grams > 0:
                 diff = item.actual_weight_grams - item.estimated_weight_grams
-                diff_color = self.colors['success'] if diff <= 0 else self.colors['warning']
-                weight_text = f"{item.estimated_weight_grams:.0f}g → {item.actual_weight_grams:.0f}g"
+                if diff > 0:
+                    weight_text = f"{item.estimated_weight_grams:.0f}→{item.actual_weight_grams:.0f}g (+{diff:.0f})"
+                elif diff < 0:
+                    weight_text = f"{item.estimated_weight_grams:.0f}→{item.actual_weight_grams:.0f}g ({diff:.0f})"
+                else:
+                    weight_text = f"{item.actual_weight_grams:.0f}g ✓"
             
             total_weight += item.total_weight
             total_time += item.time_minutes * item.quantity
+            total_items += item.quantity
             
             data.append([str(i), Paragraph(desc_text, self.styles['SmallText']), 
                         str(item.quantity), weight_text, f"{item.rate_per_gram:.2f}", f"{item.print_cost:.2f}"])
         
-        # Add summary row
+        # Add summary row with more detail
         hours = total_time // 60
         mins = total_time % 60
-        data.append(["", f"<b>Total: {len(order.items)} items</b>", "", f"<b>{total_weight:.0f}g</b>", f"<b>{hours}h {mins}m</b>", ""])
+        summary_text = f"<b>{len(order.items)} item(s), {total_items} piece(s)</b>"
+        data.append(["", Paragraph(summary_text, self.styles['SmallText']), "", 
+                    f"<b>{total_weight:.0f}g</b>", f"⏱️ {hours}h {mins}m", f"<b>{order.subtotal:.0f}</b>"])
         
-        table = Table(data, colWidths=[10*mm, 80*mm, 15*mm, 25*mm, 20*mm, 30*mm])
+        table = Table(data, colWidths=[10*mm, 78*mm, 15*mm, 27*mm, 22*mm, 28*mm])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), self._hex_to_color(self.colors['primary'])),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('FONTSIZE', (0, 1), (-1, -2), 9),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('FONTSIZE', (0, 1), (-1, -2), 8),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('ALIGN', (1, 1), (1, -1), 'LEFT'),
             ('GRID', (0, 0), (-1, -2), 0.5, self._hex_to_color(self.colors['border'])),
             ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, self._hex_to_color('#f8fafc')]),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             # Summary row styling
             ('BACKGROUND', (0, -1), (-1, -1), self._hex_to_color('#e5e7eb')),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
             ('LINEABOVE', (0, -1), (-1, -1), 1.5, self._hex_to_color(self.colors['primary'])),
         ]))
-        elements.extend([table, Spacer(1, 8*mm)])
+        elements.extend([table, Spacer(1, 6*mm)])
         return elements
     
     def _build_totals(self, order, is_quote=False):
@@ -193,26 +207,33 @@ class PDFGenerator:
         # Build totals data
         totals_data = []
         
+        # Calculate total discounts
+        total_discount = order.discount_amount + order.order_discount_amount + order.tolerance_discount_total
+        
         # Pricing breakdown
-        totals_data.append(["Base Total (4 EGP/g):", f"{order.subtotal:.2f} {currency}"])
+        totals_data.append(["Base Price:", f"{order.subtotal:.2f} {currency}"])
         
         if order.discount_percent > 0:
-            totals_data.append([f"✓ Rate Discount ({order.discount_percent:.1f}%):", f"-{order.discount_amount:.2f} {currency}"])
+            totals_data.append([f"  Rate Discount ({order.discount_percent:.0f}%):", f"-{order.discount_amount:.2f} {currency}"])
         
         if order.order_discount_percent > 0:
-            totals_data.append([f"✓ Order Discount ({order.order_discount_percent:.1f}%):", f"-{order.order_discount_amount:.2f} {currency}"])
+            totals_data.append([f"  Order Discount ({order.order_discount_percent:.0f}%):", f"-{order.order_discount_amount:.2f} {currency}"])
         
         if order.tolerance_discount_total > 0:
-            totals_data.append(["✓ Tolerance Discounts:", f"-{order.tolerance_discount_total:.2f} {currency}"])
+            totals_data.append(["  Tolerance Adjustment:", f"-{order.tolerance_discount_total:.2f} {currency}"])
         
+        if total_discount > 0:
+            totals_data.append(["━━━━━━━━━━━━━━━━━━", "━━━━━━━━━━━━"])
+            totals_data.append([f"✓ Total Savings:", f"-{total_discount:.2f} {currency}"])
+        
+        totals_data.append(["", ""])
         totals_data.append(["Subtotal:", f"{order.actual_total:.2f} {currency}"])
         
         if order.shipping_cost > 0:
-            totals_data.append(["🚚 Shipping:", f"+{order.shipping_cost:.2f} {currency}"])
+            totals_data.append(["  + Shipping:", f"+{order.shipping_cost:.2f} {currency}"])
         
-        totals_data.append(["Payment Method:", f"💳 {order.payment_method}"])
         if order.payment_fee > 0:
-            totals_data.append(["Payment Fee:", f"+{order.payment_fee:.2f} {currency}"])
+            totals_data.append([f"  + {order.payment_method} Fee:", f"+{order.payment_fee:.2f} {currency}"])
         
         totals_data.append(["", ""])
         
@@ -220,19 +241,32 @@ class PDFGenerator:
             totals_data.append(["📋 ESTIMATED TOTAL:", f"{order.total:.2f} {currency}"])
             deposit = order.total * 0.5
             totals_data.append(["", ""])
+            totals_data.append(["━━━━ PAYMENT PLAN ━━━━", ""])
             totals_data.append(["💵 Deposit Required (50%):", f"{deposit:.2f} {currency}"])
             totals_data.append(["💵 Balance on Delivery:", f"{order.total - deposit:.2f} {currency}"])
+            totals_data.append(["", ""])
+            totals_data.append(["📋 Quote Valid for 7 days", ""])
         else:
-            totals_data.append(["📋 TOTAL:", f"{order.total:.2f} {currency}"])
-            if order.rounding_loss > 0:
-                totals_data.append(["Rounding Adjustment:", f"-{order.rounding_loss:.2f} {currency}"])
+            totals_data.append(["📋 FINAL TOTAL:", f"{order.total:.2f} {currency}"])
+            totals_data.append(["", ""])
+            totals_data.append([f"Payment via {order.payment_method}", ""])
+            
             if order.amount_received > 0:
                 totals_data.append(["✓ Amount Received:", f"{order.amount_received:.2f} {currency}"])
                 balance = order.total - order.amount_received
-                if balance > 0.5:
-                    totals_data.append(["⚠️ Balance Due:", f"{balance:.2f} {currency}"])
-                elif balance < -0.5:
-                    totals_data.append(["Change Given:", f"{-balance:.2f} {currency}"])
+                if order.rounding_loss > 0.1:
+                    totals_data.append(["  Rounding Discount:", f"-{order.rounding_loss:.2f} {currency}"])
+                if balance > 1:
+                    totals_data.append(["⚠️ BALANCE DUE:", f"{balance:.2f} {currency}"])
+                elif balance < -1:
+                    totals_data.append(["💵 Change Given:", f"{abs(balance):.2f} {currency}"])
+                else:
+                    totals_data.append(["✓ PAID IN FULL", ""])
+        
+        # Material cost info (for internal reference)
+        if not is_quote and order.material_cost > 0:
+            totals_data.append(["", ""])
+            totals_data.append([f"📊 Material Cost: {order.material_cost:.0f} | Profit: {order.profit:.0f}", ""])
         
         # Create right-aligned table
         table = Table(totals_data, colWidths=[100*mm, 55*mm])
@@ -240,28 +274,43 @@ class PDFGenerator:
             ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
         ]
         
         # Find and style key rows
         for i, row in enumerate(totals_data):
-            if 'Discount' in row[0] or row[0].startswith('✓'):
+            if '✓' in row[0] and 'Saving' in row[0]:
+                style.append(('TEXTCOLOR', (0, i), (-1, i), self._hex_to_color(self.colors['success'])))
+                style.append(('FONTNAME', (0, i), (-1, i), 'Helvetica-Bold'))
+            if 'Discount' in row[0] or row[0].strip().startswith('-'):
                 style.append(('TEXTCOLOR', (1, i), (1, i), self._hex_to_color(self.colors['success'])))
             if 'TOTAL' in row[0]:
                 style.append(('FONTNAME', (0, i), (-1, i), 'Helvetica-Bold'))
-                style.append(('FONTSIZE', (0, i), (-1, i), 13))
+                style.append(('FONTSIZE', (0, i), (-1, i), 12))
                 style.append(('TEXTCOLOR', (0, i), (-1, i), self._hex_to_color(self.colors['primary'])))
                 style.append(('LINEABOVE', (0, i), (-1, i), 2, self._hex_to_color(self.colors['primary'])))
-            if 'Deposit' in row[0] or 'Balance' in row[0]:
+                style.append(('TOPPADDING', (0, i), (-1, i), 8))
+                style.append(('BOTTOMPADDING', (0, i), (-1, i), 8))
+            if 'Deposit' in row[0] or 'Balance on' in row[0]:
                 style.append(('FONTNAME', (0, i), (-1, i), 'Helvetica-Bold'))
                 style.append(('BACKGROUND', (0, i), (-1, i), self._hex_to_color('#fef3c7')))
-            if '⚠️' in row[0]:
-                style.append(('TEXTCOLOR', (1, i), (1, i), self._hex_to_color(self.colors['warning'])))
+            if '⚠️' in row[0] or 'BALANCE DUE' in row[0]:
+                style.append(('TEXTCOLOR', (0, i), (-1, i), self._hex_to_color(self.colors['danger'])))
+                style.append(('FONTNAME', (0, i), (-1, i), 'Helvetica-Bold'))
+                style.append(('BACKGROUND', (0, i), (-1, i), self._hex_to_color('#fee2e2')))
+            if 'PAID IN FULL' in row[0]:
+                style.append(('TEXTCOLOR', (0, i), (-1, i), self._hex_to_color(self.colors['success'])))
+                style.append(('FONTNAME', (0, i), (-1, i), 'Helvetica-Bold'))
+            if '📊' in row[0]:
+                style.append(('FONTSIZE', (0, i), (-1, i), 7))
+                style.append(('TEXTCOLOR', (0, i), (-1, i), self._hex_to_color(self.colors['text_light'])))
+            if '━━' in row[0]:
+                style.append(('TEXTCOLOR', (0, i), (-1, i), self._hex_to_color(self.colors['border'])))
         
         table.setStyle(TableStyle(style))
-        elements.extend([table, Spacer(1, 10*mm)])
+        elements.extend([table, Spacer(1, 8*mm)])
         return elements
     
     def _build_footer(self, order, is_quote=False):

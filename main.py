@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 from src import (
     get_database, Order, PrintItem, FilamentSpool, Customer, Printer,
     PrintSettings, FilamentHistory, OrderStatus, PaymentMethod, SupportType, 
-    SpoolCategory, SpoolStatus, format_time, generate_id, now_str,
+    SpoolCategory, SpoolStatus, PaymentSource, format_time, generate_id, now_str,
     DEFAULT_RATE_PER_GRAM, DEFAULT_COST_PER_GRAM, TRASH_THRESHOLD_GRAMS,
     TOLERANCE_THRESHOLD_GRAMS, calculate_payment_fee,
     # Failures and expenses
@@ -576,9 +576,15 @@ class App:
         self.usage_label = ttk.Label(usage_bar_frame, text="0%")
         self.usage_label.pack(side=tk.LEFT)
         
-        cols = ("Name", "Color", "Type", "Initial", "Available", "Pending", "Used", "Cost/g", "Status")
-        self.spools_tree = ttk.Treeview(tab, columns=cols, show="headings", height=14)
-        for col, w in zip(cols, [130, 70, 70, 60, 75, 55, 55, 50, 60]):
+        # Loan summary frame
+        loan_frame = ttk.LabelFrame(tab, text="💳 Loan/Payment Status", padding=8)
+        loan_frame.pack(fill=tk.X, pady=5)
+        self.loan_summary = ttk.Label(loan_frame, text="", font=("Segoe UI", 9))
+        self.loan_summary.pack(anchor=tk.W)
+        
+        cols = ("Name", "Color", "Type", "Initial", "Current", "Used%", "Cost/g", "Payment", "Status")
+        self.spools_tree = ttk.Treeview(tab, columns=cols, show="headings", height=12)
+        for col, w in zip(cols, [140, 70, 55, 60, 60, 50, 50, 130, 60]):
             self.spools_tree.heading(col, text=col)
             self.spools_tree.column(col, width=w)
         self.spools_tree.pack(fill=tk.BOTH, expand=True)
@@ -587,17 +593,21 @@ class App:
         self.spools_tree.tag_configure('low', background='#fef3c7')
         self.spools_tree.tag_configure('empty', background='#fee2e2')
         self.spools_tree.tag_configure('trash', background='#e5e7eb')
+        self.spools_tree.tag_configure('loan_unpaid', background='#fce7f3')  # Pink for unpaid loans
+        self.spools_tree.tag_configure('loan_paid', background='#d1fae5')  # Green for paid loans
         
         btn_f = ttk.Frame(tab)
         btn_f.pack(fill=tk.X, pady=5)
         
         if self.auth.has_permission(Permission.MANAGE_INVENTORY):
             ttk.Button(btn_f, text="Edit", command=self._edit_spool).pack(side=tk.LEFT, padx=3)
+            ttk.Button(btn_f, text="💳 Payment", command=self._edit_spool_payment).pack(side=tk.LEFT, padx=3)
             ttk.Button(btn_f, text="Delete", command=self._del_spool).pack(side=tk.LEFT, padx=3)
             ttk.Button(btn_f, text="🗑️ Trash", command=self._move_to_trash).pack(side=tk.LEFT, padx=3)
         
         ttk.Button(btn_f, text="📜 History", command=self._view_filament_history).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_f, text="📊 Color Chart", command=self._show_color_chart).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_f, text="📈 Consumption", command=self._show_consumption_chart).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_f, text="Refresh", command=self._load_spools).pack(side=tk.LEFT, padx=3)
     
     def _build_printers_tab(self):
@@ -747,7 +757,7 @@ class App:
         rev_cards.pack(fill=tk.X)
         
         rev_stats = [("Revenue", "revenue", Colors.PRIMARY), ("- Filament Cost", "filament_cost", Colors.DANGER),
-                    ("= Gross Profit", "gross_profit", Colors.SUCCESS), ("- Failures/Exp", "total_deductions", Colors.WARNING),
+                    ("= Gross Profit", "gross_profit", Colors.SUCCESS), ("- All Deductions", "total_deductions", Colors.WARNING),
                     ("= NET PROFIT", "profit", Colors.SUCCESS)]
         
         for i, (label, key, color) in enumerate(rev_stats):
@@ -793,7 +803,7 @@ class App:
         
         cost_stats = [("Material", "material"), ("Electricity", "electricity"), ("Nozzle", "nozzle"),
                      ("Shipping", "shipping"), ("Fees", "fees"), ("Rounding", "rounding"),
-                     ("Waste", "waste"), ("Tolerance", "tolerance")]
+                     ("Waste", "waste"), ("Spools", "spool_purchase")]
         
         for i, (label, key) in enumerate(cost_stats):
             row, col = i // 4, i % 4
@@ -893,7 +903,8 @@ class App:
         # Chart 2: Profit Breakdown (top right)
         ax2 = fig.add_subplot(2, 2, 2)
         costs = [
-            ('Filament', profit_breakdown['filament_cost'], '#ef4444'),
+            ('Per-Order Material', profit_breakdown['filament_cost'], '#ef4444'),
+            ('Spool Purchases', profit_breakdown.get('spool_purchase_total', 0), '#f87171'),
             ('Electricity', profit_breakdown['electricity_cost'], '#f59e0b'),
             ('Depreciation', profit_breakdown['depreciation_cost'], '#8b5cf6'),
             ('Fees & Loss', profit_breakdown['payment_fees'] + profit_breakdown['rounding_loss'], '#6b7280'),
@@ -908,7 +919,7 @@ class App:
         if values:
             wedges, texts, autotexts = ax2.pie(values, labels=labels, autopct='%1.1f%%',
                                                colors=colors_pie, startangle=90)
-            ax2.set_title('💸 Cost Breakdown', fontweight='bold', fontsize=11)
+            ax2.set_title('💸 Cost Breakdown (incl. Spool Purchases)', fontweight='bold', fontsize=10)
         else:
             ax2.text(0.5, 0.5, 'No costs yet', ha='center', va='center', fontsize=12)
             ax2.set_title('💸 Cost Breakdown', fontweight='bold')
@@ -982,14 +993,21 @@ class App:
         summary_frame.pack(fill=tk.X, pady=10)
         
         summary_text = (
-            f"💰 Total Revenue: {profit_breakdown['revenue']:,.0f} EGP  |  "
-            f"📈 Gross Profit: {profit_breakdown['gross_profit']:,.0f} EGP  |  "
-            f"✨ Net Profit: {profit_breakdown['net_profit']:,.0f} EGP  |  "
+            f"💰 Revenue: {profit_breakdown['revenue']:,.0f} EGP  |  "
+            f"📈 Gross: {profit_breakdown['gross_profit']:,.0f} EGP  |  "
+            f"🛒 Spools: -{profit_breakdown.get('spool_purchase_total', 0):,.0f} EGP  |  "
+            f"✨ Net: {profit_breakdown['net_profit']:,.0f} EGP  |  "
             f"📊 Margin: {profit_breakdown['profit_margin']:.1f}%"
         )
         
-        ttk.Label(summary_frame, text=summary_text, font=("Segoe UI", 11, "bold"),
+        ttk.Label(summary_frame, text=summary_text, font=("Segoe UI", 10, "bold"),
                  foreground=Colors.PRIMARY).pack()
+        
+        # Show pending loans warning if any
+        if profit_breakdown.get('pending_loans', 0) > 0:
+            loan_warning = f"⚠️ Pending Loans: {profit_breakdown['pending_loans']:,.0f} EGP (not yet deducted from profit)"
+            ttk.Label(summary_frame, text=loan_warning, font=("Segoe UI", 9),
+                     foreground=Colors.WARNING).pack()
     
     def _refresh_charts(self):
         """Refresh analytics charts"""
@@ -1285,6 +1303,10 @@ Notes: {order.notes or 'None'}
         total_value = sum(s.purchase_price_egp for s in spools if s.is_active and s.category != SpoolCategory.REMAINING.value)
         used_value = (total_u / total_initial * total_value) if total_initial > 0 else 0
         
+        # Loan/Payment tracking
+        loan_stats = self.db.get_loan_stats()
+        spool_costs = self.db.get_spool_cost_for_profit()
+        
         for s in spools:
             if s.status == SpoolStatus.TRASH.value:
                 status = "🗑️ Trash"
@@ -1298,12 +1320,29 @@ Notes: {order.notes or 'None'}
             else:
                 status = "Active"
                 tag = ''
-            category = "Remaining" if s.category == SpoolCategory.REMAINING.value else "Standard"
+            
+            # Payment status with color coding
+            if s.is_loan_unpaid:
+                payment = f"🔴 Loan: {s.loan_provider}"
+                tag = 'loan_unpaid'
+            elif s.is_loan and s.loan_paid:
+                payment = f"✅ Loan PAID"
+                tag = 'loan_paid' if not tag else tag
+            elif s.payment_source == PaymentSource.PROFIT.value:
+                payment = "💰 From Profit"
+            elif s.payment_source == PaymentSource.POCKET.value:
+                payment = "👤 From Pocket"
+            elif s.category == SpoolCategory.REMAINING.value:
+                payment = "♻️ Remaining"
+            else:
+                payment = s.payment_source
+            
+            category = "Remain" if s.category == SpoolCategory.REMAINING.value else "Std"
             cost_per_g = f"{s.cost_per_gram:.2f}" if s.cost_per_gram > 0 else "FREE"
+            used_pct = f"{100 - s.remaining_percent:.0f}%"
             self.spools_tree.insert("", tk.END, iid=s.id, values=(
                 s.display_name, s.color, category, f"{s.initial_weight_grams:.0f}g",
-                f"{s.available_weight_grams:.0f}g ({s.remaining_percent:.0f}%)",
-                f"{s.pending_weight_grams:.0f}g", f"{s.used_weight_grams:.0f}g", cost_per_g, status
+                f"{s.current_weight_grams:.0f}g", used_pct, cost_per_g, payment, status
             ), tags=(tag,))
         
         # Update summary
@@ -1318,6 +1357,19 @@ Notes: {order.notes or 'None'}
                 text=f"💰 Inventory Value: ~{total_value:,.0f} EGP | "
                      f"📊 Total Used: {total_u:,.0f}g (~{used_value:,.0f} EGP worth)"
             )
+        
+        # Update loan summary
+        if hasattr(self, 'loan_summary'):
+            if loan_stats['unpaid_loan_count'] > 0:
+                loan_text = (f"⚠️ Unpaid Loans: {loan_stats['unpaid_loan_count']} spool(s) = "
+                            f"{loan_stats['unpaid_loan_amount']:,.0f} EGP | ")
+            else:
+                loan_text = "✅ No unpaid loans | "
+            
+            loan_text += (f"💳 From Profit: {spool_costs['profit_cost']:,.0f} EGP | "
+                         f"🔄 Loans Repaid: {spool_costs['loan_repaid_cost']:,.0f} EGP | "
+                         f"📉 Affects Profit: {spool_costs['total_affects_profit']:,.0f} EGP")
+            self.loan_summary.config(text=loan_text)
         
         # Update visual usage bar
         if hasattr(self, 'usage_bar'):
@@ -1361,25 +1413,37 @@ Notes: {order.notes or 'None'}
         # Revenue & Profit with filament cost breakdown
         self.stat_lbls['revenue'].config(text=f"{s.total_revenue:.0f}")
         self.stat_lbls['filament_cost'].config(text=f"{s.total_material_cost:.0f}")
-        self.stat_lbls['gross_profit'].config(text=f"{s.gross_profit:.0f}")
-        total_deductions = s.total_failure_cost + s.total_expenses
-        self.stat_lbls['total_deductions'].config(text=f"{total_deductions:.0f}")
-        self.stat_lbls['profit'].config(text=f"{s.total_profit:.0f}")
+        self.stat_lbls['gross_profit'].config(text=f"{breakdown['gross_profit']:.0f}")
         
-        # Profit formula explanation
+        # Total deductions now includes spool purchases
+        total_deductions = s.total_failure_cost + s.total_expenses + breakdown['spool_purchase_total']
+        self.stat_lbls['total_deductions'].config(text=f"{total_deductions:.0f}")
+        self.stat_lbls['profit'].config(text=f"{breakdown['net_profit']:.0f}")
+        
+        # Profit formula explanation - now includes spool purchases
         if 'profit_formula' in self.stat_lbls:
             formula = (f"Revenue ({s.total_revenue:.0f}) - Material ({s.total_material_cost:.0f}) - "
                       f"Electricity ({s.total_electricity_cost:.1f}) - Depreciation ({s.total_depreciation_cost:.0f}) "
-                      f"= Gross ({s.gross_profit:.0f}) - Failures ({s.total_failure_cost:.0f}) - "
-                      f"Expenses ({s.total_expenses:.0f}) = Net Profit ({s.total_profit:.0f})")
+                      f"= Gross ({breakdown['gross_profit']:.0f})\n"
+                      f"  - Failures ({s.total_failure_cost:.0f}) - Expenses ({s.total_expenses:.0f}) "
+                      f"- Spool Purchases ({breakdown['spool_purchase_total']:.0f}) = Net Profit ({breakdown['net_profit']:.0f})")
+            if breakdown['pending_loans'] > 0:
+                formula += f"\n⚠️ Pending Loans: {breakdown['pending_loans']:.0f} EGP (not yet deducted)"
             self.stat_lbls['profit_formula'].config(text=formula)
+        
+        # Update spool purchase info
+        if 'spool_purchase' in self.stat_lbls:
+            spool_text = f"{breakdown['spool_purchase_total']:.0f}"
+            if breakdown['pending_loans'] > 0:
+                spool_text += f" (+{breakdown['pending_loans']:.0f})"
+            self.stat_lbls['spool_purchase'].config(text=spool_text)
         
         # Orders
         self.stat_lbls['orders'].config(text=str(s.total_orders))
         self.stat_lbls['completed'].config(text=str(s.completed_orders))
         self.stat_lbls['rd'].config(text=str(s.rd_orders))
         self.stat_lbls['weight'].config(text=f"{s.total_weight_printed:.0f}g")
-        self.stat_lbls['margin'].config(text=f"{s.profit_margin:.1f}%")
+        self.stat_lbls['margin'].config(text=f"{breakdown['profit_margin']:.1f}%")
         # Costs
         self.stat_lbls['material'].config(text=f"{s.total_material_cost:.0f}")
         self.stat_lbls['electricity'].config(text=f"{s.total_electricity_cost:.1f}")
@@ -1784,21 +1848,87 @@ Notes: {order.notes or 'None'}
                 if not n or w <= 0:
                     messagebox.showwarning("Error", "Enter name and weight")
                     return
+                
+                # Get new values
+                new_qty = int(qty_e.get() or 1)
+                new_spool_id = spool_data['ids'][spool_c.current()] if spool_data['ids'] and spool_c.current() >= 0 else ""
+                new_total_weight = w * new_qty
+                
+                # Store old values for comparison
+                old_spool_id = item.spool_id
+                old_total_weight = item.total_weight
+                
+                # Handle spool/weight changes for existing items
+                if is_edit:
+                    spool_changed = old_spool_id != new_spool_id
+                    weight_changed = abs(old_total_weight - new_total_weight) > 0.01
+                    
+                    if spool_changed or weight_changed:
+                        # Return filament to old spool
+                        if old_spool_id:
+                            old_spool = self.db.get_spool(old_spool_id)
+                            if old_spool:
+                                if item.filament_deducted:
+                                    # Filament was already used - return it
+                                    old_spool.current_weight_grams += old_total_weight
+                                    self.db.save_spool(old_spool)
+                                    item.filament_deducted = False
+                                elif item.filament_pending:
+                                    # Filament was pending - release it
+                                    old_spool.pending_weight_grams = max(0, old_spool.pending_weight_grams - old_total_weight)
+                                    self.db.save_spool(old_spool)
+                                    item.filament_pending = False
+                        
+                        # Reserve filament from new spool
+                        if new_spool_id:
+                            new_spool = self.db.get_spool(new_spool_id)
+                            if new_spool:
+                                if new_spool.available_weight_grams < new_total_weight:
+                                    messagebox.showwarning("Warning", 
+                                        f"Not enough filament in {new_spool.display_name}!\n"
+                                        f"Available: {new_spool.available_weight_grams:.1f}g\n"
+                                        f"Required: {new_total_weight:.1f}g")
+                                    return
+                                # Reserve the new amount
+                                new_spool.pending_weight_grams += new_total_weight
+                                self.db.save_spool(new_spool)
+                                item.filament_pending = True
+                                
+                                # Record consumption history
+                                self.db.record_spool_consumption(
+                                    new_spool_id, new_total_weight,
+                                    self.current_order.order_number if hasattr(self, 'current_order') else 0,
+                                    n
+                                )
+                
+                # Update item values
                 item.name = n
                 item.estimated_weight_grams = w
                 item.estimated_time_minutes = int(hours_e.get() or 0) * 60 + int(mins_e.get() or 0)
                 item.color = color_c.get()
-                item.quantity = int(qty_e.get() or 1)
+                item.quantity = new_qty
                 item.rate_per_gram = float(rate_e.get() or 4.0)
-                item.spool_id = spool_data['ids'][spool_c.current()] if spool_data['ids'] and spool_c.current() >= 0 else ""
-                item.settings = PrintSettings(nozzle_size=float(nozzle_c.get() or 0.4), layer_height=float(layer_c.get() or 0.2),
-                                              infill_density=20, support_type=support_c.get())
+                item.spool_id = new_spool_id
+                item.settings = PrintSettings(
+                    nozzle_size=float(nozzle_c.get() or 0.4), 
+                    layer_height=float(layer_c.get() or 0.2),
+                    infill_density=20, 
+                    support_type=support_c.get()
+                )
+                
+                # New item - reserve filament and add to order
                 if not is_edit:
                     if item.spool_id:
                         if not self.db.reserve_filament(item.spool_id, item.total_weight):
                             messagebox.showwarning("Warning", "Not enough filament!")
                             return
                         item.filament_pending = True
+                        # Record consumption
+                        self.db.record_spool_consumption(
+                            item.spool_id, item.total_weight,
+                            self.current_order.order_number if hasattr(self, 'current_order') else 0,
+                            n
+                        )
                     self.current_order.add_item(item)
                 
                 wt = f"{item.weight:.0f}g"
@@ -2132,6 +2262,161 @@ Notes: {order.notes or 'None'}
         if messagebox.askyesno("Confirm", "Delete this spool?"):
             self.db.delete_spool(sel[0])
             self._load_spools()
+    
+    def _edit_spool_payment(self):
+        """Edit payment/loan information for a spool"""
+        sel = self.spools_tree.selection()
+        if not sel:
+            messagebox.showwarning("Select", "Select a spool to edit payment info")
+            return
+        
+        spool = self.db.get_spool(sel[0])
+        if not spool:
+            return
+        
+        # Skip remaining spools
+        if spool.category == SpoolCategory.REMAINING.value:
+            messagebox.showinfo("Info", "Remaining spools have no cost, no payment tracking needed.")
+            return
+        
+        dlg = tk.Toplevel(self.root)
+        dlg.title(f"Payment/Loan Info - {spool.display_name}")
+        dlg.geometry("450x350")
+        dlg.transient(self.root)
+        dlg.grab_set()
+        
+        ttk.Label(dlg, text=f"Spool: {spool.display_name}", font=("Segoe UI", 12, "bold")).pack(pady=10)
+        ttk.Label(dlg, text=f"Price: {spool.purchase_price_egp:,.0f} EGP").pack()
+        
+        frame = ttk.Frame(dlg, padding=15)
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Payment source
+        ttk.Label(frame, text="Payment Source:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        source_var = tk.StringVar(value=spool.payment_source)
+        source_cb = ttk.Combobox(frame, textvariable=source_var, 
+                                 values=[PaymentSource.PROFIT.value, PaymentSource.POCKET.value, 
+                                        PaymentSource.LOAN.value, PaymentSource.GIFT.value],
+                                 state="readonly", width=20)
+        source_cb.grid(row=0, column=1, sticky=tk.W, pady=5)
+        
+        # Loan provider
+        ttk.Label(frame, text="Loan Provider:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        provider_var = tk.StringVar(value=spool.loan_provider)
+        provider_entry = ttk.Entry(frame, textvariable=provider_var, width=25)
+        provider_entry.grid(row=1, column=1, sticky=tk.W, pady=5)
+        
+        # Loan paid checkbox
+        paid_var = tk.BooleanVar(value=spool.loan_paid)
+        paid_cb = ttk.Checkbutton(frame, text="Loan has been PAID back", variable=paid_var)
+        paid_cb.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=5)
+        
+        # Loan paid amount
+        ttk.Label(frame, text="Amount Paid:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        amount_var = tk.StringVar(value=str(spool.loan_paid_amount or spool.purchase_price_egp))
+        amount_entry = ttk.Entry(frame, textvariable=amount_var, width=15)
+        amount_entry.grid(row=3, column=1, sticky=tk.W, pady=5)
+        
+        # Info label
+        info_text = ("💡 Payment affects profit calculation:\n"
+                    "• From Profit: Deducted from profit\n"
+                    "• Loan (PAID): Deducted when repaid\n"
+                    "• Loan (UNPAID): Not deducted yet\n"
+                    "• From Pocket/Gift: Never affects profit")
+        info_lbl = ttk.Label(frame, text=info_text, foreground=Colors.TEXT_SECONDARY)
+        info_lbl.grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=10)
+        
+        def save():
+            source = source_var.get()
+            provider = provider_var.get().strip()
+            paid = paid_var.get()
+            try:
+                amount = float(amount_var.get() or spool.purchase_price_egp)
+            except:
+                amount = spool.purchase_price_egp
+            
+            # Validation
+            if source == PaymentSource.LOAN.value and not provider:
+                messagebox.showwarning("Validation", "Please enter the loan provider name")
+                return
+            
+            self.db.update_spool_payment(spool.id, source, provider, paid, amount)
+            self._load_spools()
+            dlg.destroy()
+            messagebox.showinfo("Success", "Payment information updated!")
+        
+        btn_frame = ttk.Frame(dlg)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="💾 Save", command=save).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dlg.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def _show_consumption_chart(self):
+        """Show filament consumption chart"""
+        if not MATPLOTLIB_AVAILABLE:
+            messagebox.showinfo("Not Available", "Matplotlib is not installed. Install it with: pip install matplotlib")
+            return
+        
+        dlg = tk.Toplevel(self.root)
+        dlg.title("📈 Filament Consumption Chart")
+        dlg.geometry("800x600")
+        dlg.transient(self.root)
+        
+        # Get spools data
+        spools = self.db.get_all_spools()
+        
+        # Filter to standard spools only
+        std_spools = [s for s in spools if s.category != SpoolCategory.REMAINING.value]
+        
+        if not std_spools:
+            ttk.Label(dlg, text="No standard spools to display", font=("Segoe UI", 12)).pack(pady=50)
+            return
+        
+        # Create figure with subplots
+        fig = Figure(figsize=(10, 7), dpi=100)
+        
+        # Subplot 1: Consumption per spool (bar chart)
+        ax1 = fig.add_subplot(2, 1, 1)
+        names = [s.display_name[:20] for s in std_spools]
+        used = [s.used_weight_grams for s in std_spools]
+        remaining = [s.current_weight_grams for s in std_spools]
+        
+        x = range(len(names))
+        width = 0.35
+        ax1.bar([i - width/2 for i in x], used, width, label='Used', color='#3b82f6')
+        ax1.bar([i + width/2 for i in x], remaining, width, label='Remaining', color='#22c55e')
+        ax1.set_ylabel('Grams')
+        ax1.set_title('Spool Consumption Overview')
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(names, rotation=45, ha='right')
+        ax1.legend()
+        
+        # Subplot 2: Cost breakdown
+        ax2 = fig.add_subplot(2, 1, 2)
+        spool_costs = self.db.get_spool_cost_for_profit()
+        
+        labels = ['From Profit', 'Loans Repaid', 'Pending Loans', 'From Pocket']
+        values = [
+            spool_costs['profit_cost'],
+            spool_costs['loan_repaid_cost'],
+            spool_costs['pending_loan_cost'],
+            spool_costs['pocket_cost']
+        ]
+        colors = ['#f59e0b', '#22c55e', '#ef4444', '#3b82f6']
+        
+        # Filter out zero values
+        non_zero = [(l, v, c) for l, v, c in zip(labels, values, colors) if v > 0]
+        if non_zero:
+            labels, values, colors = zip(*non_zero)
+            ax2.pie(values, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
+            ax2.set_title('Spool Purchase Cost Breakdown')
+        else:
+            ax2.text(0.5, 0.5, 'No purchase data', ha='center', va='center')
+        
+        fig.tight_layout()
+        
+        canvas = FigureCanvasTkAgg(fig, dlg)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
     
     # === PRINTER OPERATIONS ===
     def _add_printer(self):

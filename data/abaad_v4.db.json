@@ -1863,21 +1863,30 @@
     },
     "1e1c4892": {
       "id": "1e1c4892",
-      "name": "eSUN PLA+ Light Blue",
+      "name": "eSUN PLA+ Light Blue #1",
       "filament_type": "PLA+",
       "brand": "eSUN",
       "color": "Light Blue",
       "category": "standard",
+      "status": "low",
       "initial_weight_grams": 1021.0,
       "current_weight_grams": 54.0,
+      "pending_weight_grams": 0,
       "purchase_price_egp": 840,
       "purchase_date": "2025-12-18 15:56:52",
-      "notes": "",
-      "is_active": true
+      "archived_date": "",
+      "notes": "First spool - Loan from Abdel Rahman Madboly (PAID)",
+      "is_active": true,
+      "payment_source": "Loan",
+      "loan_provider": "Abdel Rahman Madboly",
+      "loan_paid": true,
+      "loan_paid_date": "2025-12-20 00:00:00",
+      "loan_paid_amount": 840.0,
+      "consumption_history": []
     },
     "dbb30bb4": {
       "id": "dbb30bb4",
-      "name": "eSUN PLA+ Light Blue",
+      "name": "eSUN PLA+ Light Blue #2",
       "filament_type": "PLA+",
       "brand": "eSUN",
       "color": "Light Blue",
@@ -1889,8 +1898,14 @@
       "purchase_price_egp": 840,
       "purchase_date": "2025-12-18 15:57:25",
       "archived_date": "",
-      "notes": "",
-      "is_active": true
+      "notes": "Paid from Abaad profit",
+      "is_active": true,
+      "payment_source": "From Profit",
+      "loan_provider": "",
+      "loan_paid": false,
+      "loan_paid_date": "",
+      "loan_paid_amount": 0.0,
+      "consumption_history": []
     },
     "5eb9310c": {
       "id": "5eb9310c",
@@ -1906,8 +1921,14 @@
       "purchase_price_egp": 840,
       "purchase_date": "2025-12-18 15:57:43",
       "archived_date": "",
-      "notes": "",
-      "is_active": true
+      "notes": "Paid from Abaad profit",
+      "is_active": true,
+      "payment_source": "From Profit",
+      "loan_provider": "",
+      "loan_paid": false,
+      "loan_paid_date": "",
+      "loan_paid_amount": 0.0,
+      "consumption_history": []
     },
     "e0ca9652": {
       "id": "e0ca9652",
@@ -1923,8 +1944,14 @@
       "purchase_price_egp": 840,
       "purchase_date": "2025-12-18 15:58:16",
       "archived_date": "",
-      "notes": "",
-      "is_active": true
+      "notes": "Paid from Abaad profit",
+      "is_active": true,
+      "payment_source": "From Profit",
+      "loan_provider": "",
+      "loan_paid": false,
+      "loan_paid_date": "",
+      "loan_paid_amount": 0.0,
+      "consumption_history": []
     }
   },
   "printers": {

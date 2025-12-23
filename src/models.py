@@ -53,6 +53,14 @@ class SpoolStatus(str, Enum):
     ARCHIVED = "archived"
 
 
+class PaymentSource(str, Enum):
+    """How the spool was paid for"""
+    PROFIT = "From Profit"  # Paid from Abaad's profit
+    POCKET = "From Pocket"  # Paid from personal money
+    LOAN = "Loan"  # Borrowed from someone
+    GIFT = "Gift"  # Given for free
+
+
 class FailureReason(str, Enum):
     """Common print failure reasons"""
     NOZZLE_CLOG = "Nozzle Clog"
@@ -267,7 +275,7 @@ class Printer:
 
 @dataclass
 class FilamentSpool:
-    """Filament spool inventory with trash support"""
+    """Filament spool inventory with loan tracking and consumption history"""
     id: str = field(default_factory=generate_id)
     name: str = ""
     filament_type: str = "PLA+"
@@ -277,12 +285,22 @@ class FilamentSpool:
     status: str = SpoolStatus.ACTIVE.value
     initial_weight_grams: float = 1000.0
     current_weight_grams: float = 1000.0
-    pending_weight_grams: float = 0.0  # NEW: Pending deduction (not yet confirmed)
+    pending_weight_grams: float = 0.0  # Pending deduction (not yet confirmed)
     purchase_price_egp: float = SPOOL_PRICE_FIXED
     purchase_date: str = field(default_factory=now_str)
     archived_date: str = ""  # When moved to trash/archived
     notes: str = ""
     is_active: bool = True
+    
+    # NEW: Payment/Loan tracking
+    payment_source: str = PaymentSource.PROFIT.value  # How it was paid for
+    loan_provider: str = ""  # Who provided the loan (e.g., "Abdel Rahman Madboly")
+    loan_paid: bool = False  # Is the loan paid back?
+    loan_paid_date: str = ""  # When was the loan paid
+    loan_paid_amount: float = 0.0  # How much was paid (could be different from purchase_price)
+    
+    # NEW: Consumption tracking
+    consumption_history: List[Dict] = field(default_factory=list)  # Track each use
     
     @property
     def used_weight_grams(self) -> float:
@@ -307,7 +325,7 @@ class FilamentSpool:
         # Standard spools: fixed 840 EGP regardless of weight
         if self.initial_weight_grams <= 0:
             return DEFAULT_COST_PER_GRAM
-        return SPOOL_PRICE_FIXED / self.initial_weight_grams
+        return self.purchase_price_egp / self.initial_weight_grams
     
     @property
     def display_name(self) -> str:
@@ -319,6 +337,55 @@ class FilamentSpool:
     def should_show_trash_button(self) -> bool:
         """Show trash button if below threshold"""
         return self.current_weight_grams < TRASH_THRESHOLD_GRAMS and self.status != SpoolStatus.TRASH.value
+    
+    @property
+    def is_loan(self) -> bool:
+        """Check if this spool was purchased with a loan"""
+        return self.payment_source == PaymentSource.LOAN.value
+    
+    @property
+    def is_loan_unpaid(self) -> bool:
+        """Check if this spool has an unpaid loan"""
+        return self.is_loan and not self.loan_paid
+    
+    @property
+    def affects_profit(self) -> bool:
+        """Check if this spool's cost should be deducted from profit"""
+        # Affects profit if: paid from profit, OR loan that's been repaid
+        if self.payment_source == PaymentSource.PROFIT.value:
+            return True
+        if self.payment_source == PaymentSource.LOAN.value and self.loan_paid:
+            return True
+        return False
+    
+    @property
+    def loan_status_text(self) -> str:
+        """Get human-readable loan status"""
+        if not self.is_loan:
+            return self.payment_source
+        if self.loan_paid:
+            return f"Loan PAID to {self.loan_provider}"
+        return f"Loan from {self.loan_provider} (UNPAID)"
+    
+    @property
+    def used_value_egp(self) -> float:
+        """Value of filament used from this spool"""
+        return self.used_weight_grams * self.cost_per_gram
+    
+    @property
+    def remaining_value_egp(self) -> float:
+        """Value of filament remaining in this spool"""
+        return self.current_weight_grams * self.cost_per_gram
+    
+    def add_consumption(self, grams: float, order_number: int = 0, item_name: str = ""):
+        """Track filament consumption"""
+        self.consumption_history.append({
+            'date': now_str(),
+            'grams': grams,
+            'order_number': order_number,
+            'item_name': item_name,
+            'remaining_after': self.current_weight_grams - grams
+        })
     
     def reserve_filament(self, grams: float) -> bool:
         """Reserve filament (pending) - doesn't deduct yet"""
@@ -379,6 +446,14 @@ class FilamentSpool:
             'archived_date': self.archived_date,
             'notes': self.notes,
             'is_active': self.is_active,
+            # Loan tracking
+            'payment_source': self.payment_source,
+            'loan_provider': self.loan_provider,
+            'loan_paid': self.loan_paid,
+            'loan_paid_date': self.loan_paid_date,
+            'loan_paid_amount': self.loan_paid_amount,
+            # Consumption history
+            'consumption_history': self.consumption_history,
         }
     
     @classmethod
@@ -399,6 +474,14 @@ class FilamentSpool:
         spool.archived_date = data.get('archived_date', '')
         spool.notes = data.get('notes', '')
         spool.is_active = data.get('is_active', True)
+        # Loan tracking
+        spool.payment_source = data.get('payment_source', PaymentSource.PROFIT.value)
+        spool.loan_provider = data.get('loan_provider', '')
+        spool.loan_paid = data.get('loan_paid', False)
+        spool.loan_paid_date = data.get('loan_paid_date', '')
+        spool.loan_paid_amount = data.get('loan_paid_amount', 0.0)
+        # Consumption history
+        spool.consumption_history = data.get('consumption_history', [])
         return spool
 
 

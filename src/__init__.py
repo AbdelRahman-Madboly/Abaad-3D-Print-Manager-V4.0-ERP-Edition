@@ -5,7 +5,7 @@ Core module with AI integration and advanced features
 from .models import (
     PrintSettings, FilamentSpool, PrintItem, Customer, Order, 
     Statistics, Printer, FilamentHistory, OrderStatus, PaymentMethod, 
-    SupportType, SpoolCategory, SpoolStatus, format_time, generate_id, now_str,
+    SupportType, SpoolCategory, SpoolStatus, PaymentSource, format_time, generate_id, now_str,
     DEFAULT_RATE_PER_GRAM, DEFAULT_COST_PER_GRAM, SPOOL_PRICE_FIXED,
     TRASH_THRESHOLD_GRAMS, TOLERANCE_THRESHOLD_GRAMS,
     calculate_payment_fee,
@@ -21,7 +21,7 @@ __author__ = "Abaad 3D Printing Services"
 __all__ = [
     'PrintSettings', 'FilamentSpool', 'PrintItem', 'Customer', 'Order',
     'Statistics', 'Printer', 'FilamentHistory', 'OrderStatus', 'PaymentMethod', 
-    'SupportType', 'SpoolCategory', 'SpoolStatus', 'format_time', 'generate_id', 
+    'SupportType', 'SpoolCategory', 'SpoolStatus', 'PaymentSource', 'format_time', 'generate_id', 
     'now_str', 'DEFAULT_RATE_PER_GRAM', 'DEFAULT_COST_PER_GRAM', 'SPOOL_PRICE_FIXED',
     'TRASH_THRESHOLD_GRAMS', 'TOLERANCE_THRESHOLD_GRAMS',
     'calculate_payment_fee', 'DatabaseManager', 'get_database',

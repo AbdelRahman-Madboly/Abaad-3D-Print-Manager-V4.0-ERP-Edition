@@ -11,7 +11,7 @@ from typing import List, Optional, Dict, Any
 from .models import (
     Order, PrintItem, FilamentSpool, Customer, Statistics, Printer,
     FilamentHistory, OrderStatus, SpoolCategory, SpoolStatus, PaymentMethod,
-    PrintFailure, Expense, FailureReason, ExpenseCategory,
+    PrintFailure, Expense, FailureReason, ExpenseCategory, PaymentSource,
     now_str, DEFAULT_COST_PER_GRAM, SPOOL_PRICE_FIXED, TRASH_THRESHOLD_GRAMS
 )
 
@@ -208,6 +208,127 @@ class DatabaseManager:
             del self.data['spools'][spool_id]
             return self._save()
         return False
+    
+    # === SPOOL LOAN/PAYMENT TRACKING ===
+    def update_spool_payment(self, spool_id: str, payment_source: str, 
+                             loan_provider: str = "", loan_paid: bool = False,
+                             loan_paid_amount: float = 0.0) -> bool:
+        """Update spool payment/loan information"""
+        spool = self.get_spool(spool_id)
+        if not spool:
+            return False
+        
+        spool.payment_source = payment_source
+        spool.loan_provider = loan_provider
+        spool.loan_paid = loan_paid
+        if loan_paid and not spool.loan_paid_date:
+            spool.loan_paid_date = now_str()
+        spool.loan_paid_amount = loan_paid_amount or spool.purchase_price_egp
+        return self.save_spool(spool)
+    
+    def mark_loan_paid(self, spool_id: str, amount: float = 0.0) -> bool:
+        """Mark a spool loan as paid"""
+        spool = self.get_spool(spool_id)
+        if not spool or not spool.is_loan:
+            return False
+        
+        spool.loan_paid = True
+        spool.loan_paid_date = now_str()
+        spool.loan_paid_amount = amount or spool.purchase_price_egp
+        return self.save_spool(spool)
+    
+    def get_loan_stats(self) -> Dict[str, Any]:
+        """Get loan statistics for all spools"""
+        spools = self.get_all_spools()
+        loan_spools = [s for s in spools if s.is_loan]
+        
+        total_loan_amount = sum(s.purchase_price_egp for s in loan_spools)
+        paid_loans = [s for s in loan_spools if s.loan_paid]
+        unpaid_loans = [s for s in loan_spools if not s.loan_paid]
+        
+        return {
+            'total_loan_spools': len(loan_spools),
+            'total_loan_amount': total_loan_amount,
+            'paid_loan_count': len(paid_loans),
+            'paid_loan_amount': sum(s.loan_paid_amount for s in paid_loans),
+            'unpaid_loan_count': len(unpaid_loans),
+            'unpaid_loan_amount': sum(s.purchase_price_egp for s in unpaid_loans),
+            'loan_providers': list(set(s.loan_provider for s in loan_spools if s.loan_provider)),
+            'paid_loans': paid_loans,
+            'unpaid_loans': unpaid_loans,
+        }
+    
+    def get_spool_cost_for_profit(self) -> Dict[str, Any]:
+        """Calculate spool costs that affect profit"""
+        spools = self.get_all_spools()
+        
+        # Costs that affect profit:
+        # 1. Spools paid from profit (full price)
+        # 2. Loans that have been repaid (repayment amount)
+        
+        profit_cost = 0.0
+        pocket_cost = 0.0
+        loan_repaid_cost = 0.0
+        pending_loan_cost = 0.0
+        
+        details = []
+        
+        for spool in spools:
+            if spool.category == SpoolCategory.REMAINING.value:
+                continue  # Remaining spools have no cost
+            
+            if spool.payment_source == PaymentSource.PROFIT.value:
+                profit_cost += spool.purchase_price_egp
+                details.append({
+                    'spool': spool.display_name,
+                    'amount': spool.purchase_price_egp,
+                    'source': 'Profit',
+                    'affects_profit': True
+                })
+            elif spool.payment_source == PaymentSource.POCKET.value:
+                pocket_cost += spool.purchase_price_egp
+                details.append({
+                    'spool': spool.display_name,
+                    'amount': spool.purchase_price_egp,
+                    'source': 'Pocket',
+                    'affects_profit': False
+                })
+            elif spool.payment_source == PaymentSource.LOAN.value:
+                if spool.loan_paid:
+                    loan_repaid_cost += spool.loan_paid_amount
+                    details.append({
+                        'spool': spool.display_name,
+                        'amount': spool.loan_paid_amount,
+                        'source': f'Loan (PAID to {spool.loan_provider})',
+                        'affects_profit': True
+                    })
+                else:
+                    pending_loan_cost += spool.purchase_price_egp
+                    details.append({
+                        'spool': spool.display_name,
+                        'amount': spool.purchase_price_egp,
+                        'source': f'Loan from {spool.loan_provider} (UNPAID)',
+                        'affects_profit': False
+                    })
+        
+        return {
+            'profit_cost': profit_cost,
+            'pocket_cost': pocket_cost,
+            'loan_repaid_cost': loan_repaid_cost,
+            'pending_loan_cost': pending_loan_cost,
+            'total_affects_profit': profit_cost + loan_repaid_cost,
+            'details': details
+        }
+    
+    def record_spool_consumption(self, spool_id: str, grams: float, 
+                                  order_number: int = 0, item_name: str = "") -> bool:
+        """Record filament consumption for tracking"""
+        spool = self.get_spool(spool_id)
+        if not spool:
+            return False
+        
+        spool.add_consumption(grams, order_number, item_name)
+        return self.save_spool(spool)
     
     # === FILAMENT HISTORY ===
     def get_filament_history(self) -> List[FilamentHistory]:
@@ -571,11 +692,34 @@ class DatabaseManager:
         return color_usage
     
     def get_profit_breakdown(self) -> Dict[str, Any]:
-        """Get detailed profit breakdown"""
+        """Get detailed profit breakdown including spool purchase costs"""
         stats = self.get_statistics()
         
-        # Calculate filament cost from orders
+        # Calculate filament cost from orders (per-gram cost)
         filament_cost = stats.total_material_cost
+        
+        # Get spool purchase costs that affect profit
+        spool_costs = self.get_spool_cost_for_profit()
+        
+        # Get loan stats
+        loan_stats = self.get_loan_stats()
+        
+        # Calculate TRUE profit: Revenue - All Costs - Spool Purchases - Loan Repayments
+        total_costs = (
+            filament_cost +
+            stats.total_electricity_cost +
+            stats.total_depreciation_cost +
+            stats.total_payment_fees +
+            stats.total_rounding_loss +
+            stats.total_failure_cost +
+            stats.total_expenses
+        )
+        
+        gross_profit = stats.total_revenue - total_costs
+        
+        # Deduct spool purchases that affect profit
+        spool_purchase_deduction = spool_costs['total_affects_profit']
+        net_profit = gross_profit - spool_purchase_deduction
         
         return {
             'revenue': stats.total_revenue,
@@ -587,9 +731,19 @@ class DatabaseManager:
             'failures_cost': stats.total_failure_cost,
             'expenses': stats.total_expenses,
             'tolerance_discounts': stats.total_tolerance_discounts,
-            'gross_profit': stats.gross_profit,
-            'net_profit': stats.total_profit,
-            'profit_margin': stats.profit_margin,
+            # Spool purchases
+            'spool_from_profit': spool_costs['profit_cost'],
+            'loan_repaid': spool_costs['loan_repaid_cost'],
+            'spool_purchase_total': spool_purchase_deduction,
+            'pending_loans': spool_costs['pending_loan_cost'],
+            'spool_details': spool_costs['details'],
+            # Loan info
+            'unpaid_loan_count': loan_stats['unpaid_loan_count'],
+            'unpaid_loan_amount': loan_stats['unpaid_loan_amount'],
+            # Profits
+            'gross_profit': gross_profit,
+            'net_profit': net_profit,
+            'profit_margin': (net_profit / stats.total_revenue * 100) if stats.total_revenue > 0 else 0,
         }
     
     # === CUSTOMERS ===
