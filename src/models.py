@@ -267,7 +267,7 @@ class Printer:
 
 @dataclass
 class FilamentSpool:
-    """Filament spool inventory with trash support"""
+    """Filament spool inventory with trash support and purchase tracking"""
     id: str = field(default_factory=generate_id)
     name: str = ""
     filament_type: str = "PLA+"
@@ -275,14 +275,19 @@ class FilamentSpool:
     color: str = "Black"
     category: str = SpoolCategory.STANDARD.value
     status: str = SpoolStatus.ACTIVE.value
-    initial_weight_grams: float = 1000.0
+    initial_weight_grams: float = 1000.0  # Standard spool weight
     current_weight_grams: float = 1000.0
-    pending_weight_grams: float = 0.0  # NEW: Pending deduction (not yet confirmed)
-    purchase_price_egp: float = SPOOL_PRICE_FIXED
+    pending_weight_grams: float = 0.0  # Pending deduction (not yet confirmed)
+    purchase_price_egp: float = SPOOL_PRICE_FIXED  # Total price including shipping share
     purchase_date: str = field(default_factory=now_str)
     archived_date: str = ""  # When moved to trash/archived
     notes: str = ""
     is_active: bool = True
+    
+    # NEW: Enhanced purchase tracking
+    supplier: str = ""  # Where purchased from
+    shipping_order_id: str = ""  # Link to shipping order (expense ID)
+    base_price_egp: float = 0.0  # Price before shipping
     
     @property
     def used_weight_grams(self) -> float:
@@ -379,6 +384,9 @@ class FilamentSpool:
             'archived_date': self.archived_date,
             'notes': self.notes,
             'is_active': self.is_active,
+            'supplier': self.supplier,
+            'shipping_order_id': self.shipping_order_id,
+            'base_price_egp': self.base_price_egp,
         }
     
     @classmethod
@@ -399,6 +407,9 @@ class FilamentSpool:
         spool.archived_date = data.get('archived_date', '')
         spool.notes = data.get('notes', '')
         spool.is_active = data.get('is_active', True)
+        spool.supplier = data.get('supplier', '')
+        spool.shipping_order_id = data.get('shipping_order_id', '')
+        spool.base_price_egp = data.get('base_price_egp', 0.0)
         return spool
 
 
@@ -964,7 +975,7 @@ class PrintFailure:
 
 @dataclass
 class Expense:
-    """Track business expenses (tools, consumables, etc.)"""
+    """Track business expenses (tools, consumables, filament, etc.)"""
     id: str = field(default_factory=generate_id)
     date: str = field(default_factory=now_str)
     
@@ -974,9 +985,9 @@ class Expense:
     description: str = ""
     
     # Cost
-    amount: float = 0.0
+    amount: float = 0.0  # Unit price
     quantity: int = 1
-    total_cost: float = 0.0  # amount × quantity
+    total_cost: float = 0.0  # amount × quantity + shipping_cost
     
     # Optional tracking
     supplier: str = ""
@@ -986,9 +997,26 @@ class Expense:
     is_recurring: bool = False
     recurring_period: str = ""  # "monthly", "yearly"
     
+    # NEW: Filament purchase specific fields
+    shipping_cost: float = 0.0  # Shipping cost for this purchase
+    payment_source: str = ""  # "Cash", "Loan", "Profit", etc.
+    spool_ids: str = ""  # Comma-separated spool IDs if linked to spools
+    
     def calculate_total(self):
-        """Calculate total cost"""
-        self.total_cost = self.amount * self.quantity
+        """Calculate total cost including shipping"""
+        self.total_cost = (self.amount * self.quantity) + self.shipping_cost
+    
+    @property
+    def is_filament_purchase(self) -> bool:
+        """Check if this is a filament purchase"""
+        return self.category == ExpenseCategory.FILAMENT.value
+    
+    @property
+    def cost_per_unit_with_shipping(self) -> float:
+        """Cost per unit including shipping divided equally"""
+        if self.quantity <= 0:
+            return self.amount
+        return (self.amount * self.quantity + self.shipping_cost) / self.quantity
     
     def to_dict(self) -> dict:
         return {
@@ -1004,6 +1032,9 @@ class Expense:
             'receipt_number': self.receipt_number,
             'is_recurring': self.is_recurring,
             'recurring_period': self.recurring_period,
+            'shipping_cost': self.shipping_cost,
+            'payment_source': self.payment_source,
+            'spool_ids': self.spool_ids,
         }
     
     @classmethod
@@ -1021,6 +1052,9 @@ class Expense:
         e.receipt_number = data.get('receipt_number', '')
         e.is_recurring = data.get('is_recurring', False)
         e.recurring_period = data.get('recurring_period', '')
+        e.shipping_cost = data.get('shipping_cost', 0.0)
+        e.payment_source = data.get('payment_source', '')
+        e.spool_ids = data.get('spool_ids', '')
         return e
 
 

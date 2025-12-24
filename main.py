@@ -2332,7 +2332,7 @@ Notes: {order.notes or 'None'}
         time_e.insert(0, "0")
         time_e.pack(side=tk.LEFT, padx=5)
         
-        # Color and Printer row
+        # Color, Spool, and Printer row
         cp_frame = ttk.Frame(main)
         cp_frame.pack(fill=tk.X, pady=(0, 8))
         
@@ -2340,11 +2340,51 @@ Notes: {order.notes or 'None'}
         colors = self.db.get_colors()
         color_c = ttk.Combobox(cp_frame, values=colors, width=12)
         color_c.set(colors[0] if colors else "")
-        color_c.pack(side=tk.LEFT, padx=(5, 20))
+        color_c.pack(side=tk.LEFT, padx=(5, 10))
         
-        ttk.Label(cp_frame, text="Printer:").pack(side=tk.LEFT)
+        # Spool selection
+        spool_frame = ttk.Frame(main)
+        spool_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        ttk.Label(spool_frame, text="Spool:").pack(side=tk.LEFT)
+        all_spools = self.db.get_active_spools()
+        spool_data = {}  # To store spool references
+        spool_list = []
+        for s in all_spools:
+            label = f"{s.display_name} ({s.color}) - {s.current_weight_grams:.0f}g remaining"
+            spool_list.append(label)
+            spool_data[label] = s
+        
+        spool_c = ttk.Combobox(spool_frame, values=spool_list, width=50, state="readonly")
+        if spool_list:
+            spool_c.set(spool_list[0])
+        spool_c.pack(side=tk.LEFT, padx=5)
+        
+        # Auto-filter spools when color changes
+        def on_color_change(e=None):
+            color = color_c.get()
+            filtered = []
+            for label, s in spool_data.items():
+                if s.color == color:
+                    filtered.append(label)
+            if filtered:
+                spool_c['values'] = filtered
+                spool_c.set(filtered[0])
+            else:
+                spool_c['values'] = spool_list
+                if spool_list:
+                    spool_c.set(spool_list[0])
+        
+        color_c.bind('<<ComboboxSelected>>', on_color_change)
+        on_color_change()  # Initialize with first color
+        
+        # Printer row
+        printer_frame = ttk.Frame(main)
+        printer_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        ttk.Label(printer_frame, text="Printer:").pack(side=tk.LEFT)
         printers = self.db.get_all_printers()
-        printer_c = ttk.Combobox(cp_frame, values=[p.name for p in printers], width=15)
+        printer_c = ttk.Combobox(printer_frame, values=[p.name for p in printers], width=25)
         if printers:
             printer_c.set(printers[0].name)
         printer_c.pack(side=tk.LEFT, padx=5)
@@ -2375,6 +2415,12 @@ Notes: {order.notes or 'None'}
         
         def save():
             try:
+                # Get selected spool
+                selected_spool = None
+                spool_selection = spool_c.get()
+                if spool_selection and spool_selection in spool_data:
+                    selected_spool = spool_data[spool_selection]
+                
                 failure = PrintFailure(
                     source=source_var.get(),
                     order_id=order_data['id'] if source_var.get() == FailureSource.CUSTOMER_ORDER.value else '',
@@ -2384,15 +2430,14 @@ Notes: {order.notes or 'None'}
                     reason=reason_c.get(),
                     filament_wasted_grams=float(filament_e.get() or 0),
                     time_wasted_minutes=int(time_e.get() or 0),
-                    color=color_c.get(),
+                    color=selected_spool.color if selected_spool else color_c.get(),
                     description=desc_e.get("1.0", tk.END).strip(),
                     printer_name=printer_c.get()
                 )
                 
-                # Find spool to deduct from
-                spools = self.db.get_spools_by_color(color_c.get())
-                if spools and failure.filament_wasted_grams > 0:
-                    failure.spool_id = spools[0].id
+                # Use the selected spool
+                if selected_spool and failure.filament_wasted_grams > 0:
+                    failure.spool_id = selected_spool.id
                 
                 self.db.save_failure(failure)
                 self._load_failures()
