@@ -1784,12 +1784,23 @@
       "brand": "Mixed",
       "color": "Black",
       "category": "remaining",
+      "status": "trash",
       "initial_weight_grams": 289.0,
-      "current_weight_grams": 26.2,
+      "current_weight_grams": 0.0,
+      "pending_weight_grams": 0,
       "purchase_price_egp": 0,
       "purchase_date": "2025-12-18 00:00:00",
-      "notes": "Backfilled",
-      "is_active": true
+      "archived_date": "2025-12-24 00:00:00",
+      "notes": "FINISHED - All 289g used",
+      "is_active": false,
+      "payment_source": "Gift",
+      "loan_provider": "",
+      "loan_paid": false,
+      "loan_paid_date": "",
+      "loan_paid_amount": 0.0,
+      "consumption_history": [
+        {"date": "2025-12-18", "grams": 289.0, "order_number": 0, "item_name": "Various orders", "remaining_after": 0}
+      ]
     },
     "remaining_lightblue": {
       "id": "remaining_lightblue",
@@ -1798,12 +1809,23 @@
       "brand": "Mixed",
       "color": "Light Blue",
       "category": "remaining",
+      "status": "low",
       "initial_weight_grams": 131.0,
       "current_weight_grams": 47.0,
+      "pending_weight_grams": 0,
       "purchase_price_egp": 0,
       "purchase_date": "2025-12-18 00:00:00",
-      "notes": "Backfilled",
-      "is_active": true
+      "archived_date": "",
+      "notes": "84g used, 47g remaining",
+      "is_active": true,
+      "payment_source": "Gift",
+      "loan_provider": "",
+      "loan_paid": false,
+      "loan_paid_date": "",
+      "loan_paid_amount": 0.0,
+      "consumption_history": [
+        {"date": "2025-12-18", "grams": 84.0, "order_number": 5, "item_name": "Crank shaft", "remaining_after": 47.0}
+      ]
     },
     "remaining_white": {
       "id": "remaining_white",
@@ -1812,12 +1834,23 @@
       "brand": "Mixed",
       "color": "White",
       "category": "remaining",
+      "status": "trash",
       "initial_weight_grams": 90.1,
-      "current_weight_grams": 0.098,
+      "current_weight_grams": 0.0,
+      "pending_weight_grams": 0,
       "purchase_price_egp": 0,
       "purchase_date": "2025-12-18 00:00:00",
-      "notes": "Backfilled",
-      "is_active": true
+      "archived_date": "2025-12-24 00:00:00",
+      "notes": "FINISHED - All 90g used",
+      "is_active": false,
+      "payment_source": "Gift",
+      "loan_provider": "",
+      "loan_paid": false,
+      "loan_paid_date": "",
+      "loan_paid_amount": 0.0,
+      "consumption_history": [
+        {"date": "2025-12-18", "grams": 90.1, "order_number": 0, "item_name": "Various orders", "remaining_after": 0}
+      ]
     },
     "remaining_silver": {
       "id": "remaining_silver",
@@ -1826,12 +1859,23 @@
       "brand": "Mixed",
       "color": "Silver",
       "category": "remaining",
+      "status": "trash",
       "initial_weight_grams": 63.0,
-      "current_weight_grams": 7.0,
+      "current_weight_grams": 0.0,
+      "pending_weight_grams": 0,
       "purchase_price_egp": 0,
       "purchase_date": "2025-12-18 00:00:00",
-      "notes": "Backfilled",
-      "is_active": true
+      "archived_date": "2025-12-24 00:00:00",
+      "notes": "FINISHED - All 63g used",
+      "is_active": false,
+      "payment_source": "Gift",
+      "loan_provider": "",
+      "loan_paid": false,
+      "loan_paid_date": "",
+      "loan_paid_amount": 0.0,
+      "consumption_history": [
+        {"date": "2025-12-18", "grams": 63.0, "order_number": 0, "item_name": "Various orders", "remaining_after": 0}
+      ]
     },
     "remaining_red": {
       "id": "remaining_red",
@@ -1840,12 +1884,23 @@
       "brand": "Mixed",
       "color": "Red",
       "category": "remaining",
+      "status": "trash",
       "initial_weight_grams": 23.0,
       "current_weight_grams": 0.0,
+      "pending_weight_grams": 0,
       "purchase_price_egp": 0,
       "purchase_date": "2025-12-18 00:00:00",
-      "notes": "Backfilled",
-      "is_active": true
+      "archived_date": "2025-12-24 00:00:00",
+      "notes": "FINISHED - All 23g used",
+      "is_active": false,
+      "payment_source": "Gift",
+      "loan_provider": "",
+      "loan_paid": false,
+      "loan_paid_date": "",
+      "loan_paid_amount": 0.0,
+      "consumption_history": [
+        {"date": "2025-12-18", "grams": 23.0, "order_number": 5, "item_name": "Piston", "remaining_after": 0}
+      ]
     },
     "0d6b8e6d": {
       "id": "0d6b8e6d",
@@ -1854,12 +1909,23 @@
       "brand": "Mixed",
       "color": "Beige",
       "category": "remaining",
+      "status": "trash",
       "initial_weight_grams": 240.0,
       "current_weight_grams": 0.0,
+      "pending_weight_grams": 0,
       "purchase_price_egp": 0,
       "purchase_date": "2025-12-18 00:00:00",
-      "notes": "Backfilled",
-      "is_active": true
+      "archived_date": "2025-12-24 00:00:00",
+      "notes": "FINISHED - All 240g used",
+      "is_active": false,
+      "payment_source": "Gift",
+      "loan_provider": "",
+      "loan_paid": false,
+      "loan_paid_date": "",
+      "loan_paid_amount": 0.0,
+      "consumption_history": [
+        {"date": "2025-12-18", "grams": 240.0, "order_number": 0, "item_name": "Orders 1-5", "remaining_after": 0}
+      ]
     },
     "1e1c4892": {
       "id": "1e1c4892",
@@ -1882,7 +1948,15 @@
       "loan_paid": true,
       "loan_paid_date": "2025-12-20 00:00:00",
       "loan_paid_amount": 840.0,
-      "consumption_history": []
+      "consumption_history": [
+        {"date": "2025-12-18", "grams": 307.0, "order_number": 3, "item_name": "Part1-1", "remaining_after": 714.0},
+        {"date": "2025-12-18", "grams": 30.0, "order_number": 3, "item_name": "Part2-1", "remaining_after": 684.0},
+        {"date": "2025-12-18", "grams": 293.0, "order_number": 4, "item_name": "Parts 2,3,5", "remaining_after": 391.0},
+        {"date": "2025-12-18", "grams": 237.0, "order_number": 5, "item_name": "Upper Case", "remaining_after": 154.0},
+        {"date": "2025-12-18", "grams": 33.0, "order_number": 6, "item_name": "Accentric shaft + Rotor", "remaining_after": 121.0},
+        {"date": "2025-12-18", "grams": 51.0, "order_number": 7, "item_name": "cartier", "remaining_after": 70.0},
+        {"date": "2025-12-21", "grams": 16.0, "order_number": 8, "item_name": "Various", "remaining_after": 54.0}
+      ]
     },
     "dbb30bb4": {
       "id": "dbb30bb4",
@@ -1905,7 +1979,9 @@
       "loan_paid": false,
       "loan_paid_date": "",
       "loan_paid_amount": 0.0,
-      "consumption_history": []
+      "consumption_history": [
+        {"date": "2025-12-21", "grams": 47.0, "order_number": 8, "item_name": "Worm gear", "remaining_after": 969.0}
+      ]
     },
     "5eb9310c": {
       "id": "5eb9310c",
@@ -1917,7 +1993,7 @@
       "status": "active",
       "initial_weight_grams": 1020.0,
       "current_weight_grams": 639.88,
-      "pending_weight_grams": 50.0,
+      "pending_weight_grams": 0,
       "purchase_price_egp": 840,
       "purchase_date": "2025-12-18 15:57:43",
       "archived_date": "",
@@ -1928,7 +2004,9 @@
       "loan_paid": false,
       "loan_paid_date": "",
       "loan_paid_amount": 0.0,
-      "consumption_history": []
+      "consumption_history": [
+        {"date": "2025-12-18", "grams": 380.12, "order_number": 0, "item_name": "Orders 6-8", "remaining_after": 639.88}
+      ]
     },
     "e0ca9652": {
       "id": "e0ca9652",
@@ -1951,7 +2029,14 @@
       "loan_paid": false,
       "loan_paid_date": "",
       "loan_paid_amount": 0.0,
-      "consumption_history": []
+      "consumption_history": [
+        {"date": "2025-12-18", "grams": 68.0, "order_number": 6, "item_name": "Rotor housing", "remaining_after": 960.0},
+        {"date": "2025-12-18", "grams": 144.0, "order_number": 7, "item_name": "block", "remaining_after": 816.0},
+        {"date": "2025-12-21", "grams": 61.0, "order_number": 8, "item_name": "Gear", "remaining_after": 755.0},
+        {"date": "2025-12-21", "grams": 291.0, "order_number": 9, "item_name": "Crank shaft parts", "remaining_after": 464.0},
+        {"date": "2025-12-22", "grams": 106.0, "order_number": 9, "item_name": "FAILURE - Power outage", "remaining_after": 358.0},
+        {"date": "2025-12-22", "grams": 35.0, "order_number": 9, "item_name": "Reprint", "remaining_after": 323.0}
+      ]
     }
   },
   "printers": {
@@ -1999,6 +2084,82 @@
     }
   },
   "expenses": {
+    "fil_lightblue1": {
+      "id": "fil_lightblue1",
+      "date": "2025-12-18 15:56:52",
+      "category": "Filament",
+      "name": "eSUN PLA+ Light Blue #1",
+      "description": "1021g spool - LOAN from Abdel Rahman Madboly (PAID BACK)",
+      "amount": 840.0,
+      "quantity": 1,
+      "total_cost": 840.0,
+      "supplier": "eSUN",
+      "receipt_number": "",
+      "is_recurring": false,
+      "recurring_period": "",
+      "spool_id": "1e1c4892",
+      "payment_source": "Loan",
+      "loan_provider": "Abdel Rahman Madboly",
+      "loan_paid": true,
+      "loan_paid_date": "2025-12-20 00:00:00"
+    },
+    "fil_lightblue2": {
+      "id": "fil_lightblue2",
+      "date": "2025-12-18 15:57:25",
+      "category": "Filament",
+      "name": "eSUN PLA+ Light Blue #2",
+      "description": "1016g spool - Paid from Abaad profit",
+      "amount": 840.0,
+      "quantity": 1,
+      "total_cost": 840.0,
+      "supplier": "eSUN",
+      "receipt_number": "",
+      "is_recurring": false,
+      "recurring_period": "",
+      "spool_id": "dbb30bb4",
+      "payment_source": "From Profit",
+      "loan_provider": "",
+      "loan_paid": false,
+      "loan_paid_date": ""
+    },
+    "fil_black": {
+      "id": "fil_black",
+      "date": "2025-12-18 15:57:43",
+      "category": "Filament",
+      "name": "eSUN PLA+ Black",
+      "description": "1020g spool - Paid from Abaad profit",
+      "amount": 840.0,
+      "quantity": 1,
+      "total_cost": 840.0,
+      "supplier": "eSUN",
+      "receipt_number": "",
+      "is_recurring": false,
+      "recurring_period": "",
+      "spool_id": "5eb9310c",
+      "payment_source": "From Profit",
+      "loan_provider": "",
+      "loan_paid": false,
+      "loan_paid_date": ""
+    },
+    "fil_silver": {
+      "id": "fil_silver",
+      "date": "2025-12-18 15:58:16",
+      "category": "Filament",
+      "name": "eSUN PLA+ Silver",
+      "description": "1028g spool - Paid from Abaad profit",
+      "amount": 840.0,
+      "quantity": 1,
+      "total_cost": 840.0,
+      "supplier": "eSUN",
+      "receipt_number": "",
+      "is_recurring": false,
+      "recurring_period": "",
+      "spool_id": "e0ca9652",
+      "payment_source": "From Profit",
+      "loan_provider": "",
+      "loan_paid": false,
+      "loan_paid_date": ""
+    },
     "ffd1037d": {
       "id": "ffd1037d",
       "date": "2025-12-23 21:34:25",

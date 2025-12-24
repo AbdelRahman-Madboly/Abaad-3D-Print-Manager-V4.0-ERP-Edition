@@ -416,9 +416,16 @@ class DatabaseManager:
     def get_expense_stats(self) -> Dict[str, Any]:
         """Get expense statistics"""
         expenses = self.get_all_expenses()
+        
+        # Separate filament purchases from regular expenses
+        filament_expenses = [e for e in expenses if e.category == ExpenseCategory.FILAMENT.value]
+        other_expenses = [e for e in expenses if e.category != ExpenseCategory.FILAMENT.value]
+        
         stats = {
-            'total_expenses': sum(e.total_cost for e in expenses),
-            'expense_count': len(expenses),
+            'total_expenses': sum(e.total_cost for e in other_expenses),  # Exclude filament
+            'total_filament_purchases': sum(e.total_cost for e in filament_expenses),
+            'expense_count': len(other_expenses),
+            'filament_count': len(filament_expenses),
             'by_category': {},
         }
         # Sum by category
@@ -427,6 +434,56 @@ class DatabaseManager:
             if total > 0:
                 stats['by_category'][category.value] = total
         return stats
+    
+    def get_filament_expenses(self) -> List[Expense]:
+        """Get all filament purchase expenses"""
+        return self.get_expenses_by_category(ExpenseCategory.FILAMENT.value)
+    
+    def get_financial_summary(self) -> Dict[str, Any]:
+        """Get comprehensive financial summary"""
+        stats = self.get_statistics()
+        profit_breakdown = self.get_profit_breakdown()
+        expense_stats = self.get_expense_stats()
+        loan_stats = self.get_loan_stats()
+        
+        # Calculate true profit
+        revenue = stats.total_revenue
+        
+        # Operating costs (per order)
+        operating_costs = (
+            stats.total_material_cost +
+            stats.total_electricity_cost +
+            stats.total_depreciation_cost +
+            stats.total_payment_fees +
+            stats.total_rounding_loss
+        )
+        
+        # Gross profit (before failures, expenses, spool purchases)
+        gross_profit = revenue - operating_costs
+        
+        # Deductions
+        failure_cost = stats.total_failure_cost
+        other_expenses = expense_stats['total_expenses']  # Excludes filament
+        spool_purchases = profit_breakdown['spool_purchase_total']
+        
+        # Net profit
+        net_profit = gross_profit - failure_cost - other_expenses - spool_purchases
+        
+        return {
+            'revenue': revenue,
+            'operating_costs': operating_costs,
+            'gross_profit': gross_profit,
+            'failure_cost': failure_cost,
+            'other_expenses': other_expenses,
+            'spool_purchases': spool_purchases,
+            'net_profit': net_profit,
+            'profit_margin': (net_profit / revenue * 100) if revenue > 0 else 0,
+            'pending_loans': loan_stats['unpaid_loan_amount'],
+            # Filament details
+            'filament_material_cost': stats.total_material_cost,
+            'filament_spool_purchases': spool_purchases,
+            'filament_total_cost': stats.total_material_cost + spool_purchases,
+        }
     
     def delete_expense(self, expense_id: str) -> bool:
         if expense_id in self.data.get('expenses', {}):

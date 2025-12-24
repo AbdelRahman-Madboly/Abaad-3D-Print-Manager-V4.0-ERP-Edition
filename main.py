@@ -795,23 +795,45 @@ class App:
         for i in range(5):
             ord_cards.columnconfigure(i, weight=1)
         
-        # Costs section
-        cost_f = ttk.LabelFrame(tab, text="📉 Costs Breakdown", padding=10)
+        # Filament & Spool Section
+        fil_f = ttk.LabelFrame(tab, text="🎨 Filament & Spool Costs", padding=10)
+        fil_f.pack(fill=tk.X, pady=5)
+        fil_cards = ttk.Frame(fil_f)
+        fil_cards.pack(fill=tk.X)
+        
+        fil_stats = [("Material Used", "material", Colors.PRIMARY), 
+                    ("Spool Purchases", "spool_purchase", Colors.DANGER),
+                    ("Total Filament Cost", "total_filament", Colors.WARNING),
+                    ("Pending Loans", "pending_loans", Colors.INFO)]
+        
+        for i, (label, key, color) in enumerate(fil_stats):
+            frame = tk.Frame(fil_cards, bg=Colors.CARD, relief=tk.RIDGE, bd=1)
+            frame.grid(row=0, column=i, padx=5, pady=5, sticky="nsew")
+            tk.Label(frame, text=label, bg=Colors.CARD, fg=Colors.TEXT_LIGHT, font=("Segoe UI", 8)).pack(pady=(5, 0))
+            lbl = tk.Label(frame, text="0", bg=Colors.CARD, fg=color, font=("Segoe UI", 11, "bold"))
+            lbl.pack(pady=(0, 5))
+            self.stat_lbls[key] = lbl
+        for i in range(4):
+            fil_cards.columnconfigure(i, weight=1)
+        
+        # Other Costs section
+        cost_f = ttk.LabelFrame(tab, text="📉 Other Costs", padding=10)
         cost_f.pack(fill=tk.X, pady=5)
         cost_cards = ttk.Frame(cost_f)
         cost_cards.pack(fill=tk.X)
         
-        cost_stats = [("Material", "material"), ("Electricity", "electricity"), ("Nozzle", "nozzle"),
-                     ("Shipping", "shipping"), ("Fees", "fees"), ("Rounding", "rounding"),
-                     ("Waste", "waste"), ("Spools", "spool_purchase")]
+        cost_stats = [("Electricity", "electricity"), ("Nozzle", "nozzle"),
+                     ("Shipping", "shipping"), ("Fees", "fees"), 
+                     ("Rounding", "rounding"), ("Waste", "waste"),
+                     ("Failures", "failures"), ("Expenses", "expenses")]
         
         for i, (label, key) in enumerate(cost_stats):
             row, col = i // 4, i % 4
             frame = tk.Frame(cost_cards, bg=Colors.CARD, relief=tk.RIDGE, bd=1)
             frame.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
-            tk.Label(frame, text=label, bg=Colors.CARD, fg=Colors.TEXT_LIGHT).pack(pady=(5, 0))
-            lbl = tk.Label(frame, text="0", bg=Colors.CARD, fg=Colors.TEXT_SECONDARY, font=("Segoe UI", 11, "bold"))
-            lbl.pack(pady=(0, 5))
+            tk.Label(frame, text=label, bg=Colors.CARD, fg=Colors.TEXT_LIGHT, font=("Segoe UI", 8)).pack(pady=(4, 0))
+            lbl = tk.Label(frame, text="0", bg=Colors.CARD, fg=Colors.TEXT_SECONDARY, font=("Segoe UI", 10, "bold"))
+            lbl.pack(pady=(0, 4))
             self.stat_lbls[key] = lbl
         for i in range(4):
             cost_cards.columnconfigure(i, weight=1)
@@ -1409,34 +1431,39 @@ Notes: {order.notes or 'None'}
     def _load_stats(self):
         s = self.db.get_statistics()
         breakdown = self.db.get_profit_breakdown()
+        expense_stats = self.db.get_expense_stats()
         
         # Revenue & Profit with filament cost breakdown
         self.stat_lbls['revenue'].config(text=f"{s.total_revenue:.0f}")
         self.stat_lbls['filament_cost'].config(text=f"{s.total_material_cost:.0f}")
         self.stat_lbls['gross_profit'].config(text=f"{breakdown['gross_profit']:.0f}")
         
-        # Total deductions now includes spool purchases
-        total_deductions = s.total_failure_cost + s.total_expenses + breakdown['spool_purchase_total']
+        # Total deductions now includes spool purchases (but NOT filament from expenses - already tracked via spools)
+        total_deductions = s.total_failure_cost + expense_stats['total_expenses'] + breakdown['spool_purchase_total']
         self.stat_lbls['total_deductions'].config(text=f"{total_deductions:.0f}")
         self.stat_lbls['profit'].config(text=f"{breakdown['net_profit']:.0f}")
         
-        # Profit formula explanation - now includes spool purchases
+        # Profit formula explanation
         if 'profit_formula' in self.stat_lbls:
             formula = (f"Revenue ({s.total_revenue:.0f}) - Material ({s.total_material_cost:.0f}) - "
-                      f"Electricity ({s.total_electricity_cost:.1f}) - Depreciation ({s.total_depreciation_cost:.0f}) "
+                      f"Other Costs ({s.total_electricity_cost + s.total_depreciation_cost:.0f}) "
                       f"= Gross ({breakdown['gross_profit']:.0f})\n"
-                      f"  - Failures ({s.total_failure_cost:.0f}) - Expenses ({s.total_expenses:.0f}) "
+                      f"  - Failures ({s.total_failure_cost:.0f}) - Expenses ({expense_stats['total_expenses']:.0f}) "
                       f"- Spool Purchases ({breakdown['spool_purchase_total']:.0f}) = Net Profit ({breakdown['net_profit']:.0f})")
             if breakdown['pending_loans'] > 0:
                 formula += f"\n⚠️ Pending Loans: {breakdown['pending_loans']:.0f} EGP (not yet deducted)"
             self.stat_lbls['profit_formula'].config(text=formula)
         
-        # Update spool purchase info
+        # Filament & Spool section
+        if 'material' in self.stat_lbls:
+            self.stat_lbls['material'].config(text=f"{s.total_material_cost:.0f}")
         if 'spool_purchase' in self.stat_lbls:
-            spool_text = f"{breakdown['spool_purchase_total']:.0f}"
-            if breakdown['pending_loans'] > 0:
-                spool_text += f" (+{breakdown['pending_loans']:.0f})"
-            self.stat_lbls['spool_purchase'].config(text=spool_text)
+            self.stat_lbls['spool_purchase'].config(text=f"{breakdown['spool_purchase_total']:.0f}")
+        if 'total_filament' in self.stat_lbls:
+            total_fil = s.total_material_cost + breakdown['spool_purchase_total']
+            self.stat_lbls['total_filament'].config(text=f"{total_fil:.0f}")
+        if 'pending_loans' in self.stat_lbls:
+            self.stat_lbls['pending_loans'].config(text=f"{breakdown.get('pending_loans', 0):.0f}")
         
         # Orders
         self.stat_lbls['orders'].config(text=str(s.total_orders))
@@ -1444,15 +1471,24 @@ Notes: {order.notes or 'None'}
         self.stat_lbls['rd'].config(text=str(s.rd_orders))
         self.stat_lbls['weight'].config(text=f"{s.total_weight_printed:.0f}g")
         self.stat_lbls['margin'].config(text=f"{breakdown['profit_margin']:.1f}%")
-        # Costs
-        self.stat_lbls['material'].config(text=f"{s.total_material_cost:.0f}")
-        self.stat_lbls['electricity'].config(text=f"{s.total_electricity_cost:.1f}")
-        self.stat_lbls['nozzle'].config(text=f"{s.total_nozzle_cost:.0f}")
-        self.stat_lbls['shipping'].config(text=f"{s.total_shipping:.0f}")
-        self.stat_lbls['fees'].config(text=f"{s.total_payment_fees:.1f}")
-        self.stat_lbls['rounding'].config(text=f"{s.total_rounding_loss:.1f}")
-        self.stat_lbls['waste'].config(text=f"{s.total_filament_waste:.0f}g")
-        self.stat_lbls['tolerance'].config(text=f"{s.total_tolerance_discounts:.1f}")
+        
+        # Other Costs
+        if 'electricity' in self.stat_lbls:
+            self.stat_lbls['electricity'].config(text=f"{s.total_electricity_cost:.1f}")
+        if 'nozzle' in self.stat_lbls:
+            self.stat_lbls['nozzle'].config(text=f"{s.total_nozzle_cost:.0f}")
+        if 'shipping' in self.stat_lbls:
+            self.stat_lbls['shipping'].config(text=f"{s.total_shipping:.0f}")
+        if 'fees' in self.stat_lbls:
+            self.stat_lbls['fees'].config(text=f"{s.total_payment_fees:.1f}")
+        if 'rounding' in self.stat_lbls:
+            self.stat_lbls['rounding'].config(text=f"{s.total_rounding_loss:.1f}")
+        if 'waste' in self.stat_lbls:
+            self.stat_lbls['waste'].config(text=f"{s.total_filament_waste:.0f}g")
+        if 'failures' in self.stat_lbls:
+            self.stat_lbls['failures'].config(text=f"{s.total_failure_cost:.0f}")
+        if 'expenses' in self.stat_lbls:
+            self.stat_lbls['expenses'].config(text=f"{expense_stats['total_expenses']:.0f}")
 
     # === ORDER OPERATIONS ===
     def _new_order(self):
