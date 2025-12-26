@@ -1,0 +1,3 @@
+__pycache__/
+*.pyc
+data/abaad_v4.db.json
